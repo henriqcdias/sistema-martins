@@ -1,0 +1,10 @@
+# Sistema Martins
+- Continuar a fonte existente; não reiniciar ou reescrever módulos funcionais sem necessidade.
+- Trabalhar na branch desenvolvimento. Manter main intacta até autorização explícita.
+- Antes de cada envio, executar testes pertinentes, check estático e auditoria de publicação.
+- Versionar cada etapa aprovada e testada. Registrar alterações e limitações reais de validação.
+- Nunca versionar senhas, tokens, chaves secretas, cadastros reais, backups ou arquivos de ambiente.
+- Configurações públicas no repositório ficam vazias; preencher somente no ambiente de execução.
+- Dados de teste devem ser sintéticos e identificados. Não usar dados reais na homologação.
+- Não publicar no Netlify oficial nem alterar dados definitivos do Supabase sem autorização expressa.
+- Preservar README, histórico remoto e alterações de terceiros. Não usar force push.

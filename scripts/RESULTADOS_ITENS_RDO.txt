@@ -1,0 +1,16 @@
+✔ texto antigo é um item e mantém exatamente linhas, espaços e pontuação (1.964101ms)
+✔ vários itens e linhas internas sobrevivem ao ciclo de salvar/carregar (0.341756ms)
+✔ edição e remoção não alteram estado anterior (0.20154ms)
+✔ item vazio e índice inexistente falham sem apagar o conteúdo (0.304186ms)
+✔ texto atualizado por ferramenta antiga prevalece sobre lista divergente (1.191778ms)
+✔ conteúdo com marcação permanece texto, sem execução pelo modelo (0.352584ms)
+✔ salvamento real do RDO conserva listas e campos de texto compatíveis (13.642431ms)
+✔ falha real de persistência conserva listas na operação recuperável (12.024739ms)
+ℹ tests 8
+ℹ suites 0
+ℹ pass 8
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 220.418679

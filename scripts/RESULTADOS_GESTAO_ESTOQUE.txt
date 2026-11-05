@@ -1,0 +1,26 @@
+✔ produto novo fica selecionável por ID único sem alterar catálogo original (3.588729ms)
+✔ cadastro recusa código repetido, valores negativos, fator zero e campos vazios (0.574533ms)
+✔ entrada e saída alteram somente o produto selecionado (0.533199ms)
+✔ movimento recusa produto inexistente sem usar primeiro cadastro (0.373133ms)
+✔ saída maior que saldo e quantidades inválidas não baixam estoque (0.355969ms)
+✔ consumo preserva RDO, estoque e financeiro e guarda snapshot da unidade e valor (1.614529ms)
+✔ consumo exige obra e produto cadastrados, quantidade, preço e data realizada (0.328435ms)
+✔ consumo desatualizado ou histórico inválido é preservado sem substituição (0.529693ms)
+✔ repetir mesma operação não duplica registro (0.585184ms)
+✔ falha de quota mantém histórico anterior e não cria consumo parcial (0.670141ms)
+✔ texto antigo é um item e mantém exatamente linhas, espaços e pontuação (1.656361ms)
+✔ vários itens e linhas internas sobrevivem ao ciclo de salvar/carregar (0.434273ms)
+✔ edição e remoção não alteram estado anterior (0.366373ms)
+✔ item vazio e índice inexistente falham sem apagar o conteúdo (0.559777ms)
+✔ texto atualizado por ferramenta antiga prevalece sobre lista divergente (1.112106ms)
+✔ conteúdo com marcação permanece texto, sem execução pelo modelo (0.194161ms)
+✔ salvamento real do RDO conserva listas e campos de texto compatíveis (13.671007ms)
+✔ falha real de persistência conserva listas na operação recuperável (9.787523ms)
+ℹ tests 18
+ℹ suites 0
+ℹ pass 18
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 232.78259

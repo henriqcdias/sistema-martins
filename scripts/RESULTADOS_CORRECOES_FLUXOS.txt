@@ -1,0 +1,38 @@
+✔ datas brasileiras e ISO têm a mesma representação e rejeitam datas impossíveis (2.701634ms)
+✔ destinos brasileiros aceitam vírgula, ponto e vírgula e linhas sem alterar origem (1.262287ms)
+✔ feriado cadastrado é encontrado pela data e localidade sem gravar frequência (0.772076ms)
+✔ preparar réplica com datas brasileiras é somente leitura e bloqueia destinos existentes (0.758165ms)
+✔ auditoria reúne todos os módulos históricos e usuários cadastrados ou antigos (11.668073ms)
+✔ buscar ação ignora acentos e aceita campos ausentes sem interromper tabela (0.926092ms)
+✔ filtros por usuário, módulo, período e nome legado são combinados (0.276978ms)
+✔ editar cliente conserva identificação e campos extras sem mudar outros cadastros (0.350806ms)
+✔ novo cliente recebe ID próprio e edição de cadastro removido é recusada (0.496801ms)
+✔ produto novo fica selecionável por ID único sem alterar catálogo original (2.468972ms)
+✔ cadastro recusa código repetido, valores negativos, fator zero e campos vazios (1.078867ms)
+✔ entrada e saída alteram somente o produto selecionado (0.344216ms)
+✔ movimento recusa produto inexistente sem usar primeiro cadastro (0.282125ms)
+✔ saída maior que saldo e quantidades inválidas não baixam estoque (0.350396ms)
+✔ consumo preserva RDO, estoque e financeiro e guarda snapshot da unidade e valor (2.008724ms)
+✔ consumo exige obra e produto cadastrados, quantidade, preço e data realizada (0.357637ms)
+✔ consumo desatualizado ou histórico inválido é preservado sem substituição (0.663937ms)
+✔ repetir mesma operação não duplica registro (0.369744ms)
+✔ falha de quota mantém histórico anterior e não cria consumo parcial (0.566714ms)
+✔ PDF longo preserva texto e fotos, com logo em todas as páginas e sem notas privadas (788.527702ms)
+✔ falta de logo impede geração e imagem inválida é informada sem omissão silenciosa (64.457739ms)
+✔ proposta contém total e aceite do cliente sem assinaturas comercial ou fiscal (58.97152ms)
+✔ texto antigo é um item e mantém exatamente linhas, espaços e pontuação (1.705268ms)
+✔ vários itens e linhas internas sobrevivem ao ciclo de salvar/carregar (0.677967ms)
+✔ edição e remoção não alteram estado anterior (0.610909ms)
+✔ item vazio e índice inexistente falham sem apagar o conteúdo (0.606081ms)
+✔ texto atualizado por ferramenta antiga prevalece sobre lista divergente (2.500207ms)
+✔ conteúdo com marcação permanece texto, sem execução pelo modelo (0.618059ms)
+✔ salvamento real do RDO conserva listas e campos de texto compatíveis (20.924698ms)
+✔ falha real de persistência conserva listas na operação recuperável (11.803187ms)
+ℹ tests 30
+ℹ suites 0
+ℹ pass 30
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1145.790894

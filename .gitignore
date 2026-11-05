@@ -1,0 +1,61 @@
+# O código atual é mantido em dist/; não ignorar essa pasta.
+node_modules/
+.pnpm-store/
+.npm/
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Credenciais e configuração particular
+.env
+.env.*
+!.env.example
+!.env.template
+*.local.js
+*.local.json
+*.pem
+*.key
+*.p12
+*.pfx
+credentials*.json
+service-account*.json
+.npmrc
+.netrc
+
+# Metadados particulares de hospedagem
+.openai/
+.netlify/
+.vercel/
+.wrangler/
+
+# Dados do usuário, backups e exportações
+/backups/
+/exports/
+/uploads/
+/downloads/
+/private-data/
+*.sqlite
+*.sqlite3
+*.db
+*.dump
+
+# Artefatos reproduzíveis e resultados temporários
+/tmp/
+/temp/
+/coverage/
+/test-results/
+/playwright-report/
+/output/
+*.log
+*.tar
+*.tar.gz
+*.tgz
+*.zip
+.DS_Store
+Thumbs.db
+
+# Configuração local do editor
+.idea/
+.vscode/*
+!.vscode/extensions.json

@@ -1,0 +1,18 @@
+{
+  "name": "sistema-martins",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Fonte de desenvolvimento do MARTINS RDO MASTER",
+  "scripts": {
+    "test": "node --test scripts/*.test.cjs",
+    "check": "node scripts/check-static.cjs",
+    "audit:source": "node scripts/auditar-publicacao.cjs"
+  },
+  "devDependencies": {
+    "pdf-lib": "1.17.1",
+    "pdfjs-dist": "5.6.205"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

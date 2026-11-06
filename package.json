@@ -8,7 +8,8 @@
     "check": "node scripts/check-static.cjs",
     "audit:source": "node scripts/auditar-publicacao.cjs",
     "test:browser": "node scripts/qa-browser-horas.cjs && node scripts/qa-browser-fluxos.cjs",
-    "test:browser:hml": "node scripts/qa-browser-supabase-hml.cjs"
+    "test:browser:hml": "node scripts/qa-browser-supabase-hml.cjs",
+    "test:supabase:remote": "node scripts/homologar-supabase-remoto.cjs"
   },
   "devDependencies": {
     "pdf-lib": "1.17.1",

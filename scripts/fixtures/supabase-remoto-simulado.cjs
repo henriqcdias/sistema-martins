@@ -1,0 +1,25 @@
+'use strict';
+const {randomUUID}=require('node:crypto');
+function config(){const users={},roles=['rhA','rhB','financeiroA','inativoA'];for(const role of roles)users[role]={email:role+'@example.invalid',password:randomUUID(),uid:randomUUID()};return {url:'https://abcdefghijklmnopqrst.supabase.co',publishableKey:'sb_publishable_1234567890abcdefghijklmnop',projectRef:'abcdefghijklmnopqrst',confirmacao:'HOMOLOGACAO_ISOLADA',empresaA:randomUUID(),empresaB:randomUUID(),usuarios:users};}
+function service(cfg,{outageAt='',badProfile=false,badEnvironment=false}={}){const tokens=new Map,refreshes=new Map,records=new Map,operations=new Map,files=new Map,audits=[],calls=[];let sequence=0;
+const json=(data,status=200)=>new Response(status===204?null:JSON.stringify(data),{status,headers:{'Content-Type':'application/json'}});
+const company=role=>role==='rhB'?cfg.empresaB:cfg.empresaA;
+const profile=role=>({usuario_id:cfg.usuarios[role].uid,empresa_id:company(role),ativo:role!=='inativoA',papel:role==='financeiroA'?'financeiro':'rh'});
+function allowed(role,tenant,module){return role&&role!=='inativoA'&&company(role)===tenant&&(role==='financeiroA'?['financeiro','remuneracao','vales'].includes(module):['funcionarios','documentos'].includes(module));}
+function sign(role){const access='access-qa-'+(++sequence),refresh='refresh-qa-'+sequence;tokens.set(access,role);refreshes.set(refresh,role);return {access_token:access,refresh_token:refresh,expires_in:3600,user:{id:cfg.usuarios[role].uid}};}
+async function fetcher(url,options={}){const u=new URL(url),p=u.pathname,method=options.method||'GET',body=typeof options.body==='string'?JSON.parse(options.body):options.body,role=tokens.get(options.headers?.Authorization?.replace('Bearer ',''));calls.push({path:p,method});if(outageAt&&p.includes(outageAt))throw Error('FALHA_SINTETICA_PRIVADA');
+if(p==='/auth/v1/token'){if(u.searchParams.get('grant_type')==='password'){const role=Object.keys(cfg.usuarios).find(r=>cfg.usuarios[r].email===body.email&&cfg.usuarios[r].password===body.password);return role?json(sign(role)):json({},400);}const role=refreshes.get(body.refresh_token);if(!role)return json({},400);refreshes.delete(body.refresh_token);return json(sign(role));}
+if(p==='/auth/v1/user')return role?json({id:cfg.usuarios[role].uid,email:cfg.usuarios[role].email}):json({},401);
+if(p==='/auth/v1/logout'){if(role)for(const [token,r]of refreshes)if(r===role)refreshes.delete(token);return json(null,204);}
+if(!role)return json({},401);
+if(p==='/rest/v1/ambiente')return json([{project_ref:badEnvironment?'outroprojeto':cfg.projectRef,tipo:'homologacao',contrato:1}]);
+if(p==='/rest/v1/membros'){if(method!=='GET')return json({},403);return json([{...profile(role),...(badProfile?{papel:'administrador'}:{})}]);}
+if(p==='/rest/v1/rpc/permitido')return json(allowed(role,body.p_empresa,body.p_modulo));
+if(p==='/rest/v1/rpc/salvar_registro'){const b=body;if(!allowed(role,b.p_empresa,b.p_modulo)||['financeiro','remuneracao','vales'].includes(b.p_modulo))return json({},403);const op=b.p_empresa+'/'+b.p_operacao,key=b.p_empresa+'/'+b.p_modulo+'/'+b.p_id;if(operations.has(op))return json(operations.get(op));const old=records.get(key);if((old?.versao||0)!==b.p_versao)return json({},409);const row={empresa_id:b.p_empresa,modulo:b.p_modulo,id:b.p_id,versao:b.p_versao+1,dados:b.p_dados};records.set(key,row);operations.set(op,row);audits.push({empresa_id:b.p_empresa,usuario_id:cfg.usuarios[role].uid,operacao_id:b.p_operacao,modulo:b.p_modulo,registro_id:b.p_id});return json(row);}
+if(p==='/rest/v1/registros')return json([...records.values()].filter(r=>allowed(role,r.empresa_id,r.modulo)&&(!u.searchParams.get('empresa_id')||r.empresa_id===u.searchParams.get('empresa_id').slice(3))&&(!u.searchParams.get('id')||r.id===u.searchParams.get('id').slice(3))));
+if(p==='/rest/v1/auditoria')return json(audits.filter(r=>allowed(role,r.empresa_id,r.modulo)&&(!u.searchParams.get('empresa_id')||r.empresa_id===u.searchParams.get('empresa_id').slice(3))&&(!u.searchParams.get('operacao_id')||r.operacao_id===u.searchParams.get('operacao_id').slice(3))&&(!u.searchParams.get('registro_id')||r.registro_id===u.searchParams.get('registro_id').slice(3))));
+if(p.startsWith('/storage/v1/object/')){let relative=p.split('/storage/v1/object/')[1];if(relative.startsWith('public/'))return json({},404);relative=relative.replace(/^authenticated\//,'');const [bucket,tenant,kind,recordId]=relative.split('/'),module=kind==='documentos_financeiros'?'financeiro':'documentos';if(!allowed(role,tenant,module))return json({},403);if(method==='POST'){if(files.has(relative))return json({},409);files.set(relative,new Uint8Array(options.body));audits.push({empresa_id:tenant,usuario_id:cfg.usuarios[role].uid,modulo:module,registro_id:recordId});return json({Key:relative});}return files.has(relative)?new Response(files.get(relative),{status:200,headers:{'Content-Type':'application/pdf'}}):json({},404);}
+return json({},404);
+}
+return {fetcher,calls,records,files,audits};}
+module.exports={config,service};

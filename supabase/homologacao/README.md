@@ -21,3 +21,6 @@ Estes scripts não são uma migração automática do banco existente. Usam some
 Obter inventário somente leitura do projeto separado, conferir ownership das funções, schema exposto no PostgREST, JWT e perfis de dois usuários de empresas distintas. Executar testes reais antes de habilitar qualquer sincronização de dados existentes. Não copiar dados definitivos para homologação.
 
 Referências primárias consultadas: https://supabase.com/docs/guides/database/postgres/row-level-security e https://supabase.com/docs/guides/storage/security/access-control.
+
+## Homologação remota guiada
+Consultar PROCEDIMENTO_REMOTO.md para instalação dos scripts 001–004 em projeto separado, usuários fictícios, configuração privada e executor remoto opt-in. O script 003 separa documentos financeiros dos documentos de RH. O script 004 identifica o projeto no servidor e impede o navegador de alterar essa declaração. Credenciais do exemplo estão vazias e o executor nunca imprime seus valores.

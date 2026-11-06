@@ -1,0 +1,14 @@
+{
+  "url": "",
+  "publishableKey": "",
+  "projectRef": "",
+  "confirmacao": "HOMOLOGACAO_ISOLADA",
+  "empresaA": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+  "empresaB": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+  "usuarios": {
+    "rhA": { "email": "", "password": "", "uid": "" },
+    "rhB": { "email": "", "password": "", "uid": "" },
+    "financeiroA": { "email": "", "password": "", "uid": "" },
+    "inativoA": { "email": "", "password": "", "uid": "" }
+  }
+}

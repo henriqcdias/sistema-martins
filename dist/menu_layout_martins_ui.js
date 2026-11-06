@@ -13,8 +13,31 @@ for(const b of list.querySelectorAll('[data-nav="novo"] span'))if(b.textContent.
 }
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>queueMicrotask(install));else install();let returnFocus=null;
 const old=window.abrirDrawerMenu,close=window.fecharDrawerMenu;
-if(old)window.abrirDrawerMenu=function(...args){install();const drawer=$('drawer-menu-lateral');if(drawer?.classList.contains('hidden'))returnFocus=document.activeElement;const result=old.apply(this,args);drawer?.setAttribute('role','dialog');drawer?.setAttribute('aria-label','Menu do sistema');drawer?.setAttribute('aria-modal','true');for(const id of ['btn-abrir-drawer-header','bnav-btn-menu'])$(id)?.setAttribute('aria-expanded','true');drawer?.querySelector('button')?.focus();return result;};
-if(close)window.fecharDrawerMenu=function(...args){const result=close.apply(this,args);for(const id of ['btn-abrir-drawer-header','bnav-btn-menu'])$(id)?.setAttribute('aria-expanded','false');if(returnFocus?.isConnected)returnFocus.focus();returnFocus=null;return result;};
+// Instala os wrappers depois que as funções originais estiverem disponíveis.
+// Evita perder a integração quando este arquivo é carregado antes do script principal.
+function vincularDrawer(){
+ const abrir=window.abrirDrawerMenu,fechar=window.fecharDrawerMenu;
+ if(typeof abrir==='function'&&!abrir.__martinsLayoutWrapped){
+   const wrapped=function(...args){
+     install();const drawer=$('drawer-menu-lateral');
+     if(drawer?.classList.contains('hidden'))returnFocus=document.activeElement;
+     const result=abrir.apply(this,args);
+     drawer?.setAttribute('role','dialog');drawer?.setAttribute('aria-label','Menu do sistema');drawer?.setAttribute('aria-modal','true');
+     for(const id of ['btn-abrir-drawer-header','bnav-btn-menu'])$(id)?.setAttribute('aria-expanded','true');
+     drawer?.querySelector('button')?.focus();return result;
+   };
+   wrapped.__martinsLayoutWrapped=true;window.abrirDrawerMenu=wrapped;
+ }
+ if(typeof fechar==='function'&&!fechar.__martinsLayoutWrapped){
+   const wrapped=function(...args){const result=fechar.apply(this,args);
+     for(const id of ['btn-abrir-drawer-header','bnav-btn-menu'])$(id)?.setAttribute('aria-expanded','false');
+     if(returnFocus?.isConnected)returnFocus.focus();returnFocus=null;return result;};
+   wrapped.__martinsLayoutWrapped=true;window.fecharDrawerMenu=wrapped;
+ }
+}
+vincularDrawer();
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',vincularDrawer,{once:true});
+window.addEventListener('load',vincularDrawer,{once:true});
 document.addEventListener('keydown',e=>{const drawer=$('drawer-menu-lateral');if(!drawer||drawer.classList.contains('hidden'))return;if(e.key==='Escape'){e.preventDefault();window.fecharDrawerMenu();}else if(e.key==='Tab'){const items=[...drawer.querySelectorAll('button,a,summary,input,select')].filter(x=>!x.disabled&&x.getClientRects().length);const first=items[0],last=items.at(-1);if(first&&(e.shiftKey&&document.activeElement===first||!e.shiftKey&&document.activeElement===last)){e.preventDefault();(e.shiftKey?last:first).focus();}}});
 // O aviso offline pode ocupar várias linhas no celular; o cabeçalho acompanha sua altura.
 const banner=$('banner-modo-offline'),header=document.querySelector('body>header');

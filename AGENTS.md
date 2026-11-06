@@ -8,3 +8,6 @@
 - Dados de teste devem ser sintéticos e identificados. Não usar dados reais na homologação.
 - Não publicar no Netlify oficial nem alterar dados definitivos do Supabase sem autorização expressa.
 - Preservar README, histórico remoto e alterações de terceiros. Não usar force push.
+- Manter dist/index.html e dist/rdo_digital_martins.html alinhados às mesmas funcionalidades.
+- Distinguir teste automatizado, revisão visual de componente, fluxo completo e teste em aparelho físico; não declarar validações não executadas.
+- Planejamento não registra presença futura, não aprova RDO e não gera despesas automaticamente.

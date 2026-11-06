@@ -1,0 +1,48 @@
+/* Sistema Martins | camada visual incremental do pacote Gemini
+ * Branch de revisão. Importar somente após conferir seletores no HTML atual.
+ * Não contém usuários, credenciais, autorização ou regras de negócio.
+ */
+:root { --martins-mobile-nav-height: 76px; --martins-touch-target: 44px; }
+@media (max-width: 767px) {
+  /* Mantém áreas clicáveis confortáveis e evita sobreposição com a navegação inferior. */
+  #btn-abrir-drawer-header, [data-martins-mobile-shortcut] {
+    min-height: var(--martins-touch-target);
+    touch-action: manipulation;
+  }
+  [data-martins-mobile-shortcuts] {
+    position: fixed;
+    inset: auto 0 0;
+    z-index: 9999;
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    padding: 8px max(6px, env(safe-area-inset-right)) calc(8px + env(safe-area-inset-bottom)) max(6px, env(safe-area-inset-left));
+    gap: 4px;
+    background: #0f172a;
+    border-top: 1px solid rgba(255,255,255,.15);
+    box-shadow: 0 -8px 24px rgba(15,23,42,.16);
+  }
+  [data-martins-mobile-shortcut] {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    min-width: 0;
+    color: #f8fafc;
+    font-size: 10px;
+    font-weight: 650;
+    text-align: center;
+    border-radius: 9px;
+  }
+  [data-martins-mobile-shortcut]:focus-visible,
+  #btn-abrir-drawer-header:focus-visible {
+    outline: 3px solid #f59e0b;
+    outline-offset: 2px;
+  }
+  body:has([data-martins-mobile-shortcuts]) {
+    padding-bottom: calc(var(--martins-mobile-nav-height) + env(safe-area-inset-bottom));
+  }
+}
+@media (min-width: 768px) {
+  [data-martins-mobile-shortcuts] { display: none; }
+}

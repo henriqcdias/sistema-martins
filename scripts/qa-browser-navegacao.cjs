@@ -6,6 +6,7 @@ await p.route('**/*',r=>r.request().url().startsWith('http://127.0.0.1:')?r.cont
 await p.goto('http://127.0.0.1:'+server.address().port+'/'+entry);
 // Sessão fictícia local: não representa login nem autorização no servidor.
 await p.evaluate(()=>{currentLoggedUser={id:'QA',usuario:'qa',nome:'QA',perfil:'Master',status:'Ativo'};sessionStorage.setItem('cm_active_user',JSON.stringify(currentLoggedUser));document.getElementById('tela-login-gate').classList.add('hidden');});
+assert.equal(await p.evaluate(()=>{const buttons=[...document.querySelectorAll('#martins-bottom-bar button')].filter(b=>b.getClientRects().length);return buttons.length===7&&Math.max(...buttons.map(b=>b.getBoundingClientRect().top))-Math.min(...buttons.map(b=>b.getBoundingClientRect().top))<2;}),true,'Atalhos inferiores em uma linha, sem controles ocultos ocupando espaço');
 assert.equal(await p.locator('#drawer-menu-lateral').evaluate(e=>e.parentElement.tagName),'BODY');
 await p.locator('#btn-abrir-drawer-header').click();await p.locator('#drawer-menu-lateral summary').first().waitFor({state:'visible'});
 assert.equal(await p.locator('#btn-abrir-drawer-header').getAttribute('aria-expanded'),'true');

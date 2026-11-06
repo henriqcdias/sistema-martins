@@ -1,7 +1,7 @@
 (function(root,factory){if(typeof module==='object')module.exports=factory(require('./persistencia_rdo'),require('./integracao_jornada'));else root.MartinsRh=factory(root.MartinsPersistenciaRdo,root.MartinsJornada);})(globalThis,(P,J)=>{'use strict';
 const EMPLOYEES='cm_colaboradores_db',DOCS='cm_documentos_colaboradores_v1',MAX_FILE=512*1024,MAX_DATA=2*1024*1024;
-function canEdit(u){return Boolean(u&&u.status!=='Inativo'&&(u.perfil==='Master'||u.permissoes?.colaboradores===true||/Recursos Humanos|Diretoria|Administrativo|Engenharia|Responsável Técnica|Financeiro/.test(u.perfil||'')));}
-function canSensitive(u){return Boolean(u&&u.status!=='Inativo'&&(u.perfil==='Master'||u.permissoes?.rh===true||/Recursos Humanos|Diretoria|Administrativo|Financeiro/.test(u.perfil||'')));}
+function canEdit(u){return Boolean(u&&u.status!=='Inativo'&&u.permissoes?.colaboradores!==false&&(u.perfil==='Master'||u.permissoes?.colaboradores===true||/Recursos Humanos|Diretoria|Administrativo|Engenharia|Responsável Técnica|Financeiro/.test(u.perfil||'')));}
+function canSensitive(u){return Boolean(u&&u.status!=='Inativo'&&u.permissoes?.rh!==false&&(u.perfil==='Master'||u.permissoes?.rh===true||/Recursos Humanos|Diretoria|Administrativo|Financeiro/.test(u.perfil||'')));}
 function rows(list){if(!Array.isArray(list))throw Error('Cadastro de colaboradores inválido');const ids=new Set;for(const r of list){if(!r||r.id===undefined||r.id===null||!String(r.id)||ids.has(String(r.id)))throw Error('Colaborador sem identificação única; base preservada');ids.add(String(r.id));}return list;}
 function person(list,id){rows(list);const found=list.filter(c=>String(c.id)===String(id));if(found.length!==1)throw Error('Colaborador não encontrado ou ambíguo');return found[0];}
 function text(v,label,max=500){if(typeof v!=='string'||!v.trim()||v.length>max)throw Error('Informe '+label+' (até '+max+' caracteres)');return v.trim();}

@@ -124,3 +124,18 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 #drawer-menu-lateral #sm-planning #ma-menu-conferencia>span{font-size:13px!important;line-height:1.4!important;min-width:0!important;margin:0!important}
 #drawer-menu-lateral #sm-planning>summary{font-size:12px!important;padding:10px!important}
 `;document.head.appendChild(style)})();
+
+/* MARTINS_HML_ORDEM_OBRAS_V1 */
+(()=>{'use strict';
+function ajustarOrdem(){
+ const obras=document.getElementById('sm-works');const planejamento=document.getElementById('sm-planning');
+ if(!obras||!planejamento||planejamento.parentElement!==obras)return;
+ const dashboard=[...obras.querySelectorAll('[data-nav]')].find(el=>el.dataset.nav==='gestao');
+ if(!dashboard)return;
+ const principal=dashboard.closest('button,a')||dashboard;
+ if(principal.parentElement!==obras)return;
+ principal.after(planejamento);
+}
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>queueMicrotask(ajustarOrdem),{once:true});else queueMicrotask(ajustarOrdem);
+const drawer=document.getElementById('drawer-menu-lateral');if(drawer){drawer.addEventListener('click',()=>queueMicrotask(ajustarOrdem),{capture:true});}
+})();

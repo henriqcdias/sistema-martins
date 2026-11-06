@@ -20,6 +20,7 @@
 <script src="persistencia_rdo.js"></script>
 <script src="integracao_jornada.js"></script>
 <script src="planejamento_periodos.js"></script>
+<script src="frequencia_diaria.js"></script>
 <script src="backup_integridade.js"></script>
 <link rel="stylesheet" href="martins.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -4208,7 +4209,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
       const dataFiltro = document.getElementById("ponto-data-filtro") ? document.getElementById("ponto-data-filtro").value : new Date().toISOString().split("T")[0];
       const colabs = getColaboradoresDb();
       // Lista de colaboradores ativos
-      const colabsAtivos = colabs.filter(c => c.status !== "Inativo");
+      const colabsAtivos = colabs.filter(c => !MartinsPlanejamento.employeeIssue(c, dataFiltro));
 
       const db = getDb();
       const freqSalva = getFrequenciaDiariaDb()[dataFiltro] || {};
@@ -9360,7 +9361,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
       }
 
       const colabs = getColaboradoresDb();
-      const colabsAtivos = colabs.filter(c => c.status !== "Inativo");
+      const colabsAtivos = colabs.filter(c => !MartinsPlanejamento.employeeIssue(c, dataFiltro));
       const db = getDb();
       const freqDb = getFrequenciaDiariaDb();
       const freqSalva = freqDb[dataFiltro] || {};
@@ -9459,6 +9460,14 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
           valorSelecionado = "STATUS:sem_apontamento";
         }
 
+        // Situação persistida prevalece sobre o calendário; não transformar afastamento em folga.
+        if (freqSalva[c.id] && freqSalva[c.id].status !== 'presente') {
+          valorSelecionado='STATUS:'+freqSalva[c.id].status;
+        } else if (!freqSalva[c.id]) {
+          const impedimento=MartinsPlanejamento.unavailable(String(c.id),dataFiltro,{},MartinsPlanejamento.config(localStorage));
+          if(impedimento){valorSelecionado='STATUS:'+impedimento;statusGeral=impedimento==='falta'?'falta':impedimento==='atestado'?'atestado':'folga';}
+        }
+
         // Contabiliza no resumo geral do dia
         if (statusGeral === "presente") presentes++;
         else if (statusGeral === "falta") faltas++;
@@ -9534,6 +9543,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
                 <option value="STATUS:domingo" ${valorSelecionado === 'STATUS:domingo' ? 'selected' : ''}>🔵 Domingo (Descanso Semanal)</option>
                 <option value="STATUS:folga" ${valorSelecionado === 'STATUS:folga' ? 'selected' : ''}>🔵 Folga / Compensação</option>
                 <option value="STATUS:chuva" ${valorSelecionado === 'STATUS:chuva' ? 'selected' : ''}>🌧️ Chuva / Paralisação</option>
+                <option value="STATUS:afastamento" ${valorSelecionado === 'STATUS:afastamento' ? 'selected' : ''}>Afastamento</option>
                 <option value="STATUS:ferias" ${valorSelecionado === 'STATUS:ferias' ? 'selected' : ''}>🏖️ Férias</option>
                 <option value="STATUS:sem_apontamento" ${valorSelecionado === 'STATUS:sem_apontamento' ? 'selected' : ''}>⚪ Sem Apontamento</option>
               </optgroup>
@@ -9541,6 +9551,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
           </td>
 
           <td class="py-2 px-3">
+            <label>Horas normais <input type="number" min="0.25" max="8" step="0.25" class="inp-horas-ponto" value="${freqSalva[c.id]?.status === 'presente' ? Number(freqSalva[c.id].horas) : 8}" ${Array.isArray(freqSalva[c.id]?.alocacoes) ? 'disabled' : ''}></label>
             <input type="text" value="${obsLinha}" placeholder="Opcional: CID, motivo, meio período..." class="inp-obs-ponto w-full bg-slate-50 border border-slate-300 rounded-lg py-1.5 px-2.5 text-xs text-slate-800 focus:bg-white focus:border-amber-500">
           </td>
 
@@ -9583,90 +9594,30 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
       atualizarContadoresPonto(presentes, faltas, atestados, folgas);
     }
 
-    function gravarLinhaPontoNoBanco(tr) {
-      if (!tr) return;
-      const dataFiltro = document.getElementById("ponto-data-filtro") ? document.getElementById("ponto-data-filtro").value : new Date().toISOString().split("T")[0];
-      const colabId = tr.dataset.colabId;
-      const colabNome = tr.dataset.colabNome;
-      const selDestino = tr.querySelector(".sel-destino-ponto");
-      const inpObs = tr.querySelector(".inp-obs-ponto");
-      const badgeCell = tr.querySelector(".cell-cesta-badge");
-      if (!selDestino || !colabId) return;
-
-      const val = selDestino.value;
-      const registroAnterior = getFrequenciaDiariaDb()[dataFiltro]?.[colabId];
-      if (Array.isArray(registroAnterior?.alocacoes)) {
-        selDestino.value = 'RATEIO';
-        showToast('Rateio preservado. Confira as alocações no planejamento integrado.', 'warning');
-        return;
-      }
-      const obs = inpObs ? inpObs.value.trim() : "";
-      let status = "folga";
-      let obra = "";
-      let horas = 0;
-
-      if (val.startsWith("OBRA:")) {
-        status = "presente";
-        obra = val.replace("OBRA:", "");
-        horas = registroAnterior?.status === 'presente' && registroAnterior.obra === obra
-          ? Number(registroAnterior.horas) : 8;
-        selDestino.className = "sel-destino-ponto w-full rounded-xl py-1.5 px-2.5 text-xs border shadow-2xs focus:outline-none focus:ring-2 focus:ring-amber-500 transition cursor-pointer bg-emerald-50 text-emerald-950 border-emerald-400 font-extrabold";
-        if (badgeCell) badgeCell.innerHTML = `<span class="bg-emerald-100 text-emerald-900 border border-emerald-300 font-black text-[10px] px-2.5 py-0.5 rounded-full">✓ 100% Cesta</span>`;
-      } else {
-        const stKey = val.replace("STATUS:", "");
-        if (stKey === "falta") {
-          status = "falta";
-          selDestino.className = "sel-destino-ponto w-full rounded-xl py-1.5 px-2.5 text-xs border shadow-2xs focus:outline-none focus:ring-2 focus:ring-amber-500 transition cursor-pointer bg-red-50 text-red-950 border-red-400 font-extrabold";
-          if (badgeCell) badgeCell.innerHTML = `<span class="bg-red-100 text-red-900 border border-red-300 font-black text-[10px] px-2.5 py-0.5 rounded-full">⚠️ Perde Cesta</span>`;
-        } else if (stKey === "atestado") {
-          status = "atestado";
-          selDestino.className = "sel-destino-ponto w-full rounded-xl py-1.5 px-2.5 text-xs border shadow-2xs focus:outline-none focus:ring-2 focus:ring-amber-500 transition cursor-pointer bg-amber-50 text-amber-950 border-amber-400 font-extrabold";
-          if (badgeCell) badgeCell.innerHTML = `<span class="bg-amber-100 text-amber-900 border border-amber-300 font-black text-[10px] px-2.5 py-0.5 rounded-full">⚠️ Perde Cesta</span>`;
-        } else if (stKey === "feriado") {
-          status = "feriado";
-          selDestino.className = "sel-destino-ponto w-full rounded-xl py-1.5 px-2.5 text-xs border shadow-2xs focus:outline-none focus:ring-2 focus:ring-amber-500 transition cursor-pointer bg-purple-50 text-purple-950 border-purple-300 font-bold";
-          if (badgeCell) badgeCell.innerHTML = `<span class="bg-purple-100 text-purple-900 border border-purple-300 font-bold text-[10px] px-2.5 py-0.5 rounded-full">🟣 Feriado</span>`;
-        } else {
-          status = stKey;
-          selDestino.className = "sel-destino-ponto w-full rounded-xl py-1.5 px-2.5 text-xs border shadow-2xs focus:outline-none focus:ring-2 focus:ring-amber-500 transition cursor-pointer bg-blue-50 text-blue-900 border-blue-300 font-semibold";
-          if (badgeCell) badgeCell.innerHTML = `<span class="bg-blue-100 text-blue-800 font-bold text-[10px] px-2.5 py-0.5 rounded-full">🔵 Fim Sem./Folga</span>`;
-        }
-      }
-
-      const freqDb = getFrequenciaDiariaDb();
-      if (!freqDb[dataFiltro]) freqDb[dataFiltro] = {};
-      freqDb[dataFiltro][colabId] = {
-        ...(registroAnterior || {}),
-        nome: colabNome,
-        status: status,
-        obra: obra,
-        horas: horas,
-        obs: obs
-      };
-      saveFrequenciaDiariaDb(freqDb);
+    function entradaFrequencia(tr, destino) {
+      const val=destino || tr.querySelector('.sel-destino-ponto')?.value || '';
+      const day=document.getElementById('ponto-data-filtro').value;
+      const old=getFrequenciaDiariaDb()[day]?.[tr.dataset.colabId];
+      return {id:tr.dataset.colabId,status:val==='RATEIO'||val.startsWith('OBRA:')?'presente':val.replace('STATUS:',''),obra:val.replace('OBRA:',''),horas:tr.querySelector('.inp-horas-ponto')?.value ?? (old?.status==='presente'?old.horas:8),obs:tr.querySelector('.inp-obs-ponto')?.value || '',preserveAllocations:val==='RATEIO'};
+    }
+    function persistirFrequencia(inputs) {
+      const day=document.getElementById('ponto-data-filtro').value;
+      const before=localStorage.getItem(MartinsJornada.KEYS.frequency);
+      const next=MartinsFrequencia.apply(MartinsJornada.read(localStorage,MartinsJornada.KEYS.frequency,{}),day,inputs,getColaboradoresDb(),MartinsPlanejamento.config(localStorage),Object.keys(dadosObras));
+      MartinsJornada.write(localStorage,MartinsJornada.KEYS.frequency,next,before);
       recalcularSumarioPonto();
     }
-
-    function salvarFrequenciaDiariaDoDia() {
-      const rows = document.querySelectorAll("#tbody-auditoria-ponto tr");
-      rows.forEach(tr => gravarLinhaPontoNoBanco(tr));
-      const dataFiltro = document.getElementById("ponto-data-filtro") ? document.getElementById("ponto-data-filtro").value : new Date().toISOString().split("T")[0];
-      renderColaboradoresTable();
-      showToast(`✓ Frequência do dia ${formatDate(dataFiltro)} salva e calibrada com sucesso!`);
+    function gravarLinhaPontoNoBanco(tr) {
+      if(!tr?.dataset.colabId)return;
+      try{persistirFrequencia([entradaFrequencia(tr)]);}catch(e){showToast(e.message,'warning');renderAuditoriaPonto();}
     }
-
+    function salvarFrequenciaDiariaDoDia() {
+      try{persistirFrequencia([...document.querySelectorAll('#tbody-auditoria-ponto tr')].filter(tr=>tr.dataset.colabId).map(tr=>entradaFrequencia(tr)));renderColaboradoresTable();showToast('Frequência validada e salva.');}catch(e){showToast(e.message,'warning');}
+    }
     function marcarTodosComoPresentes() {
-      const selLote = document.getElementById("sel-lote-destino-ponto");
-      const valLote = selLote && selLote.value ? selLote.value : "OBRA:Obra de Teste A";
-      const rows = document.querySelectorAll("#tbody-auditoria-ponto tr");
-      rows.forEach(tr => {
-        const sel = tr.querySelector(".sel-destino-ponto");
-        if (sel) {
-          sel.value = valLote;
-          gravarLinhaPontoNoBanco(tr);
-        }
-      });
-      showToast("Alocação aplicada aos funcionários listados!");
+      const val=document.getElementById('sel-lote-destino-ponto')?.value;
+      if(!val){showToast('Selecione o destino do lote.','warning');return;}
+      try{persistirFrequencia([...document.querySelectorAll('#tbody-auditoria-ponto tr')].filter(tr=>tr.dataset.colabId).map(tr=>entradaFrequencia(tr,val)));renderAuditoriaPonto();showToast('Alocação validada e salva.');}catch(e){showToast(e.message,'warning');}
     }
 
     function replicarUltimoDiaTrabalho() {
@@ -10795,7 +10746,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
       const tbodyPonto = document.getElementById("tbody-auditoria-ponto");
       if (tbodyPonto) {
         tbodyPonto.addEventListener("change", (e) => {
-          if (e.target && (e.target.classList.contains("sel-destino-ponto") || e.target.classList.contains("inp-obs-ponto"))) {
+          if (e.target && (e.target.classList.contains("sel-destino-ponto") || e.target.classList.contains("inp-obs-ponto") || e.target.classList.contains("inp-horas-ponto"))) {
             const tr = e.target.closest("tr");
             gravarLinhaPontoNoBanco(tr);
           }

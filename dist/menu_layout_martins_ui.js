@@ -54,3 +54,28 @@ if(banner){new MutationObserver(headerOffset).observe(banner,{attributes:true,at
 
 /* Melhoria 3: ajustes não destrutivos na barra mobile existente. */
 (()=>{const s=document.createElement('script');s.src=new URL('martins_barra_mobile_incremental.js',document.currentScript?.src||document.baseURI).href;s.defer=true;document.head.append(s);})();
+
+/* MARTINS_HML_VISUAL_MENU_V1 */
+(()=>{'use strict';
+const css=document.createElement('style');
+css.setAttribute('data-martins-hml-menu-visual','v1');
+css.textContent=`
+#drawer-menu-lateral{--sm-ink:#24344b;--sm-muted:#61728a;--sm-line:#e4eaf2;--sm-surface:#f6f8fb;--sm-accent:#1e568e}
+#drawer-menu-lateral .overflow-y-auto{padding:10px 12px 22px!important;scrollbar-width:thin}
+#drawer-menu-lateral .sm-group{border:1px solid var(--sm-line)!important;border-radius:12px;margin:0 0 10px;padding:0!important;background:#fff;overflow:visible}
+#drawer-menu-lateral .sm-group>summary{display:list-item;list-style-position:inside;padding:14px 14px!important;font-size:12px!important;letter-spacing:.035em;line-height:1.5;color:var(--sm-ink)!important;background:var(--sm-surface);border-radius:11px;cursor:pointer}
+#drawer-menu-lateral .sm-group[open]>summary{border-bottom:1px solid var(--sm-line);border-radius:11px 11px 0 0}
+#drawer-menu-lateral .sm-group button,#drawer-menu-lateral .sm-group a[data-nav]{display:flex;align-items:center;gap:10px;min-height:44px;width:100%;padding:10px 12px!important;border-radius:8px;font-size:13px;line-height:1.45;color:var(--sm-ink);text-align:left;box-sizing:border-box}
+#drawer-menu-lateral .sm-group button:hover,#drawer-menu-lateral .sm-group a[data-nav]:hover{background:#edf3fa}
+#drawer-menu-lateral .sm-group button:focus-visible,#drawer-menu-lateral .sm-group summary:focus-visible{outline:2px solid var(--sm-accent);outline-offset:1px}
+#drawer-menu-lateral .sm-group button>span,#drawer-menu-lateral .sm-group a>span{min-width:0}
+#drawer-menu-lateral .sm-group button>span:last-child{overflow-wrap:anywhere}
+#drawer-menu-lateral #sm-finance #fin-drawer{padding:6px 8px 10px}
+#drawer-menu-lateral #sm-finance #fin-drawer button{margin:2px 0}
+#drawer-menu-lateral #sm-planning{margin:8px 10px!important;padding:0 0 0 8px!important;border-left:2px solid #b7cadf!important}
+#drawer-menu-lateral .sm-menu-toolbar{padding:12px!important;background:#fff!important;border-bottom:1px solid var(--sm-line)!important}
+#drawer-menu-lateral .sm-menu-toolbar input{min-height:42px;border-radius:10px!important}
+@media(max-width:600px){#drawer-menu-lateral .overflow-y-auto{padding:8px 10px 24px!important}#drawer-menu-lateral .sm-group>summary{padding:13px 12px!important}#drawer-menu-lateral .sm-group button{font-size:13px!important}}
+`;
+document.head.appendChild(css);
+})();

@@ -1,4 +1,4 @@
--- SQL Editor do PROJETO SEPARADO DE HOMOLOGAÇÃO, após 001 a 004.
+-- SQL Editor do PROJETO SEPARADO DE HOMOLOGAÇÃO, após 001 a 005.
 -- Preencha somente project_ref e os quatro UUIDs obtidos no painel Auth.
 -- Não inserir senha ou chave secreta neste SQL. Não executar no projeto definitivo.
 BEGIN;

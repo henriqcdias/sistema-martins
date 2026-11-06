@@ -23,4 +23,6 @@ Obter inventário somente leitura do projeto separado, conferir ownership das fu
 Referências primárias consultadas: https://supabase.com/docs/guides/database/postgres/row-level-security e https://supabase.com/docs/guides/storage/security/access-control.
 
 ## Homologação remota guiada
-Consultar PROCEDIMENTO_REMOTO.md para instalação dos scripts 001–004 em projeto separado, usuários fictícios, configuração privada e executor remoto opt-in. O script 003 separa documentos financeiros dos documentos de RH. O script 004 identifica o projeto no servidor e impede o navegador de alterar essa declaração. Credenciais do exemplo estão vazias e o executor nunca imprime seus valores.
+Consultar PROCEDIMENTO_REMOTO.md para instalação dos scripts 001–005 em projeto separado, usuários fictícios, configuração privada e executor remoto opt-in. O script 003 separa documentos financeiros dos documentos de RH. O script 004 identifica o projeto no servidor e impede o navegador de alterar essa declaração. Credenciais do exemplo estão vazias e o executor nunca imprime seus valores.
+
+A consulta estado_financeiro do script 005 confirma bloqueio de pagamentos, fechamentos e exceções. Não concede autorização financeira nem permite trocar flags pelo cliente. A liberação exige etapa posterior de autorização e comandos de negócio com homologação real.

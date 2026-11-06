@@ -13,6 +13,7 @@ No SQL Editor desse projeto separado, execute primeiro consultas/01_inventario_s
 2. 002_documentos_privados.sql
 3. 003_documentos_financeiros.sql
 4. 004_identificacao_ambiente.sql
+5. 005_financeiro_bloqueado.sql
 
 Se o schema, buckets, funções ou políticas já existem, não repetir scripts nem remover objetos: conferir o inventário e preparar uma atualização específica. Os scripts não têm DROP ou limpeza automática. Uma incompatibilidade interrompe a preparação.
 
@@ -51,7 +52,7 @@ O executor exige que a referência configurada corresponda à URL e à identific
 ## 5. Conferir evidências
 O relatório é salvo por padrão em output/RESULTADOS_SUPABASE_REMOTO.json, pasta ignorada pelo git. Pode-se escolher caminho com MARTINS_HML_REPORT. Resultado não contém e-mails, senhas, chaves ou tokens. Preflight bloqueado não é contado como teste remoto. Transporte simulado é explicitamente marcado como simulado.
 
-O roteiro testa login, renovação, perfil, RLS por API direta, inatividade, autopromoção recusada, auditoria, duas solicitações da mesma versão, Storage privado, duas empresas, RH versus documentos financeiros, não sobrescrita, bloqueio financeiro genérico e logout/refresh invalidado. Não usa somente mensagens de bloqueio do cliente como prova de RLS.
+O roteiro testa login, renovação, perfil, RLS por API direta, inatividade, autopromoção recusada, auditoria, duas solicitações da mesma versão, Storage privado, duas empresas, RH versus documentos financeiros, não sobrescrita, estado financeiro bloqueado no servidor, bloqueio financeiro genérico e logout/refresh invalidado. Não usa somente mensagens de bloqueio do cliente como prova de RLS.
 
 Os registros e arquivos sintéticos criados ficam disponíveis para conferência; não há DELETE, migração definitiva ou limpeza automática. A confirmação de origem não prova a segurança das tabelas de produção nem migra dados canônicos.
 

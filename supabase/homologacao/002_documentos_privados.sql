@@ -3,6 +3,7 @@ BEGIN;
 DO $$ BEGIN
  IF EXISTS(SELECT 1 FROM storage.buckets WHERE id='martins-hml-documentos-v1' AND public) THEN
  RAISE EXCEPTION 'Bucket reservado já é público; implantação interrompida'; END IF;
+ IF EXISTS(SELECT 1 FROM storage.buckets WHERE id='martins-hml-documentos-v1' AND (file_size_limit IS NULL OR file_size_limit>524288 OR allowed_mime_types IS NULL OR NOT allowed_mime_types<@ARRAY['application/pdf','image/png','image/jpeg'])) THEN RAISE EXCEPTION 'Configuração do bucket existente requer conferência'; END IF;
 END $$;
 INSERT INTO storage.buckets(id,name,public,file_size_limit,allowed_mime_types)
 VALUES('martins-hml-documentos-v1','martins-hml-documentos-v1',false,524288,ARRAY['application/pdf','image/png','image/jpeg'])
@@ -10,7 +11,7 @@ ON CONFLICT(id) DO NOTHING;
 CREATE FUNCTION martins_hml_v1.documento_permitido(p_nome text,p_escrita boolean DEFAULT false)
 RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path='' AS $$
  SELECT CASE WHEN p_nome ~ '^[a-f0-9-]{36}/documentos/[a-f0-9-]{36}/[a-f0-9-]{36}\.(pdf|png|jpg)$'
- AND split_part(p_nome,'/',1) ~ '^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$'
+ AND split_part(p_nome,'/',1) ~ '^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$'
  THEN martins_hml_v1.permitido(split_part(p_nome,'/',1)::uuid,'documentos',p_escrita) ELSE false END
 $$;
 REVOKE ALL ON FUNCTION martins_hml_v1.documento_permitido(text,boolean) FROM PUBLIC;
@@ -30,4 +31,15 @@ CREATE POLICY martins_hml_doc_read ON storage.objects FOR SELECT TO authenticate
  USING(bucket_id='martins-hml-documentos-v1' AND martins_hml_v1.documento_permitido(name,false));
 CREATE POLICY martins_hml_doc_insert ON storage.objects FOR INSERT TO authenticated
  WITH CHECK(bucket_id='martins-hml-documentos-v1' AND martins_hml_v1.documento_permitido(name,true));
+CREATE FUNCTION martins_hml_v1.auditar_documento() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+BEGIN
+ IF NEW.bucket_id='martins-hml-documentos-v1' THEN
+  IF NOT martins_hml_v1.documento_permitido(NEW.name,true) THEN RAISE EXCEPTION 'Documento não autorizado' USING ERRCODE='42501'; END IF;
+  INSERT INTO martins_hml_v1.auditoria(empresa_id,operacao_id,usuario_id,modulo,registro_id,versao_anterior,versao_nova,campos)
+  VALUES(split_part(NEW.name,'/',1)::uuid,gen_random_uuid(),auth.uid(),'documentos',split_part(NEW.name,'/',3)::uuid,0,1,ARRAY['objeto_privado_criado']);
+ END IF;
+ RETURN NEW;
+END $$;
+REVOKE ALL ON FUNCTION martins_hml_v1.auditar_documento() FROM PUBLIC;
+CREATE TRIGGER martins_hml_auditar_documento AFTER INSERT ON storage.objects FOR EACH ROW EXECUTE FUNCTION martins_hml_v1.auditar_documento();
 COMMIT;

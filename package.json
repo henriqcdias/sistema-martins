@@ -7,7 +7,8 @@
     "test": "node --test scripts/*.test.cjs",
     "check": "node scripts/check-static.cjs",
     "audit:source": "node scripts/auditar-publicacao.cjs",
-    "test:browser": "node scripts/qa-browser-horas.cjs && node scripts/qa-browser-fluxos.cjs"
+    "test:browser": "node scripts/qa-browser-horas.cjs && node scripts/qa-browser-fluxos.cjs",
+    "test:browser:hml": "node scripts/qa-browser-supabase-hml.cjs"
   },
   "devDependencies": {
     "pdf-lib": "1.17.1",

@@ -1,0 +1,16 @@
+/* Conferência explícita de um registro isolado. Nenhuma importação de bases locais. */
+(function(root,factory){if(typeof module==='object')module.exports=factory();else root.MartinsSincronizacaoHml=factory();})(globalThis,()=>{'use strict';
+const canonical=x=>Array.isArray(x)?'['+x.map(canonical).join(',')+']':x&&typeof x==='object'?'{'+Object.keys(x).sort().map(k=>JSON.stringify(k)+':'+canonical(x[k])).join(',')+'}':JSON.stringify(x);
+function create(client,identity,{newId=()=>crypto.randomUUID()}={}){
+ const key=structuredClone(identity);let base=null,loaded=false,pending=null,status='vazio',busy=false,generation=0;
+ function active(){if(!client.state().autenticado){reset();throw Error('Sessão encerrada; conteúdo de homologação removido desta conferência');}}
+ function reset(){generation++;base=null;loaded=false;pending=null;status='vazio';busy=false;}
+ async function load(){active();if(busy||pending)throw Error('Há operação pendente; conclua ou confira antes de recarregar');const gen=generation;busy=true;try{const row=await client.loadRecord(key);if(gen!==generation)throw Error('Conferência encerrada');active();base=row;loaded=true;status='carregado';return structuredClone(row);}finally{if(gen===generation)busy=false;}}
+ function prepare(data){active();if(!loaded||busy||pending)throw Error('Carregue o registro e conclua operações anteriores antes de preparar');if(!data||typeof data!=='object'||Array.isArray(data))throw Error('Conteúdo deve ser objeto JSON');pending={...key,versao:base?.versao||0,dados:structuredClone(data),operacao:newId()};status='preparado';return snapshot();}
+ async function save(){active();if(!pending||busy)throw Error('Prepare uma operação antes de confirmar');const gen=generation;busy=true;try{const result=await client.saveRecord(structuredClone(pending));if(gen!==generation)throw Error('Conferência encerrada');active();if(canonical(result.dados)!==canonical(pending.dados))throw Error('Resposta difere do conteúdo conferido');base=result;pending=null;loaded=true;status='salvo';return structuredClone(result);}catch(e){if(gen===generation)status=e.status===409?'conflito':e.status===403?'recusado':'incerto';throw e;}finally{if(gen===generation)busy=false;}}
+ function cancel(){active();if(busy||status==='incerto')throw Error('Resultado incerto: repita o mesmo ID de operação ou reconcilie antes de descartar');pending=null;status=loaded?'carregado':'vazio';}
+ async function reconcile(){active();if(busy||!pending)throw Error('Não há operação pendente para conferir');const gen=generation;busy=true;try{const remote=await client.loadRecord(key);if(gen!==generation)throw Error('Conferência encerrada');active();const matches=remote&&remote.versao===pending.versao+1&&canonical(remote.dados)===canonical(pending.dados);if(matches){base=remote;pending=null;loaded=true;status='reconciliado';}else status='conferencia_necessaria';return {confirmado:Boolean(matches),remoto:structuredClone(remote),operacao:pending?.operacao||null};}finally{if(gen===generation)busy=false;}}
+ function snapshot(){active();return {status,busy,loaded,base:structuredClone(base),pendente:structuredClone(pending)};}
+ return {load,prepare,save,cancel,reconcile,snapshot,reset};
+}
+return {create,canonical};});

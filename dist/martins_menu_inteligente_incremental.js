@@ -22,15 +22,23 @@ function init(){
  const targets=()=>[...list.querySelectorAll('button,a,[data-nav]')].filter(el=>!el.closest('.sm-menu-toolbar'));
  const normalize=s=>(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
  const originalOpen=new WeakMap();
+ const originalVisibility=new WeakMap();
+ function setFiltered(el,show){
+  if(!originalVisibility.has(el))originalVisibility.set(el,{hidden:el.hidden,display:el.style.display});
+  const original=originalVisibility.get(el);
+  el.hidden=!show||original.hidden;
+  el.style.display=show?original.display:'none';
+ }
  function filter(){
   const term=normalize(input.value.trim());
   for(const group of groups()){
    if(term&&!originalOpen.has(group))originalOpen.set(group,group.open);
-   const entries=[...group.querySelectorAll('button,a,[data-nav]')];
+   const entries=[...group.querySelectorAll('button,a,[data-nav]')].filter(el=>!el.parentElement?.closest('button,a,[data-nav]'));
+   const groupMatch=!!term&&normalize(group.querySelector(':scope > summary')?.textContent).includes(term);
    let matches=0;
    for(const el of entries){
-    const ok=!term||normalize(el.textContent).includes(term);
-    el.hidden=!ok;el.style.display=ok?'':'none';if(ok)matches++;
+    const ok=!term||groupMatch||normalize(el.textContent).includes(term);
+    setFiltered(el,ok);if(ok&&!originalVisibility.get(el)?.hidden)matches++;
    }
    group.hidden=!!term&&!matches;
    if(term&&matches)group.open=true;
@@ -39,7 +47,7 @@ function init(){
   for(const el of targets()){
    if(el.closest('details.sm-group'))continue;
    const ok=!term||normalize(el.textContent).includes(term);
-   el.hidden=!ok;el.style.display=ok?'':'none';
+   setFiltered(el,ok);
   }
  }
  input.addEventListener('input',filter);
@@ -49,8 +57,8 @@ function init(){
   toggle.textContent=expand?'Recolher grupos':'Expandir grupos';
  });
  list.addEventListener('click',event=>{
-  const target=event.target.closest('button,a,[data-nav]');
-  if(!target||!list.contains(target))return;
+  const target=event.target.closest('[data-nav]');
+  if(!target||!list.contains(target)||target.disabled||event.defaultPrevented)return;
   for(const el of targets())el.removeAttribute('aria-current');
   target.setAttribute('aria-current','page');
   if(window.matchMedia('(max-width: 1023px)').matches&&typeof window.fecharDrawerMenu==='function'){

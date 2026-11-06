@@ -11,7 +11,7 @@ Há adaptadores antigos em integracao_rdo_remoto_ui.js e custos_obras.html que d
 - Acesso no menu a supabase_conexao.html, dentro do mesmo pacote completo.
 - Configuração explícita Project URL + Publishable Key, sem conexão no carregamento e sem chave secreta.
 - Auth por API HTTP oficial, confirmação de identidade pelo endpoint /auth/v1/user, leitura do próprio perfil e autorização pela função existente.
-- Sessão somente em memória; senha/token não entram no backup nem no localStorage. Não há sessão persistente ou refresh automático nesta etapa; ao expirar/recarregar é necessário novo login.
+- Sessão somente em memória; senha e tokens não entram no backup nem no localStorage. A versão atual inclui renovação explícita em memória, com confirmação da identidade e perfis no servidor; ao recarregar é necessário novo login.
 - Diagnóstico das nove tabelas com LIMIT 0. Não carrega linhas de negócio, não altera esquema e não envia dados locais.
 - Configuração opcional de build para HTML puro por scripts/configurar-supabase-publico.cjs.
 
@@ -54,3 +54,9 @@ O gerador só escreve dist/supabase.config.js, contendo URL e chave pública, e 
 
 ## Limite desta entrega
 Conector de autenticação/diagnóstico pronto para ser configurado, com testes simulados. Nenhuma conexão real, tabela adicional, política, bucket, migração ou sincronização de módulos foi executada nesta etapa. O inventário real é a dependência para o próximo DDL, evitando duplicar estruturas.
+
+
+## Atualização de desenvolvimento — segurança isolada
+Os commits a partir de 75f406987e17 acrescentam o contrato separado em homologacao/README.md: RLS, permissões, RPC com revisão/idempotência e Storage privado. Há conector e tela opt-in para dados sintéticos deste schema. Financeiro/Remuneração/Vales não aceitam escrita pelo comando genérico. Nenhum script foi aplicado ao projeto remoto; a dependência de inventário e homologação real permanece.
+
+Testes PostgreSQL reais no PGlite verificam políticas com roles/claims sintéticas. Testes de navegador usam PostgreSQL local e serviços Auth/PostgREST/Storage simulados; não são evidência de isolamento ou login no projeto Supabase remoto. Ver VERIFICACAO_DOCUMENTOS_HML.md e o relatório mais recente desta execução.

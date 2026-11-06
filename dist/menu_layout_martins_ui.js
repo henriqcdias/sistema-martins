@@ -11,5 +11,14 @@ for(const id of ['btn-colab-trocar-senha','btn-menu-trocar-senha'])$(id)?.setAtt
 const novo=list.querySelector('[data-nav="novo"] span:last-child');if(novo&&novo.textContent.trim()==='Apontar')novo.textContent='RDO';
 for(const b of list.querySelectorAll('[data-nav="novo"] span'))if(b.textContent.includes('Preencher Novo'))b.textContent='Preencher RDO';
 }
-if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>queueMicrotask(install));else install();const old=window.abrirDrawerMenu;if(old)window.abrirDrawerMenu=function(...args){install();return old.apply(this,args);};
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>queueMicrotask(install));else install();let returnFocus=null;
+const old=window.abrirDrawerMenu,close=window.fecharDrawerMenu;
+if(old)window.abrirDrawerMenu=function(...args){install();const drawer=$('drawer-menu-lateral');if(drawer?.classList.contains('hidden'))returnFocus=document.activeElement;const result=old.apply(this,args);drawer?.setAttribute('role','dialog');drawer?.setAttribute('aria-label','Menu do sistema');drawer?.setAttribute('aria-modal','true');for(const id of ['btn-abrir-drawer-header','bnav-btn-menu'])$(id)?.setAttribute('aria-expanded','true');drawer?.querySelector('button')?.focus();return result;};
+if(close)window.fecharDrawerMenu=function(...args){const result=close.apply(this,args);for(const id of ['btn-abrir-drawer-header','bnav-btn-menu'])$(id)?.setAttribute('aria-expanded','false');if(returnFocus?.isConnected)returnFocus.focus();returnFocus=null;return result;};
+document.addEventListener('keydown',e=>{const drawer=$('drawer-menu-lateral');if(!drawer||drawer.classList.contains('hidden'))return;if(e.key==='Escape'){e.preventDefault();window.fecharDrawerMenu();}else if(e.key==='Tab'){const items=[...drawer.querySelectorAll('button,a,summary,input,select')].filter(x=>!x.disabled&&x.getClientRects().length);const first=items[0],last=items.at(-1);if(first&&(e.shiftKey&&document.activeElement===first||!e.shiftKey&&document.activeElement===last)){e.preventDefault();(e.shiftKey?last:first).focus();}}});
+// O aviso offline pode ocupar várias linhas no celular; o cabeçalho acompanha sua altura.
+const banner=$('banner-modo-offline'),header=document.querySelector('body>header');
+function headerOffset(){if(header)header.style.top=(banner&&!banner.classList.contains('hidden')?banner.getBoundingClientRect().height:0)+'px';}
+if(banner){new MutationObserver(headerOffset).observe(banner,{attributes:true,attributeFilter:['class','style']});if(typeof ResizeObserver!=='undefined')new ResizeObserver(headerOffset).observe(banner);}window.addEventListener('resize',headerOffset);headerOffset();
 })();
+

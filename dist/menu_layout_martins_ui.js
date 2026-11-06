@@ -22,3 +22,6 @@ function headerOffset(){if(header)header.style.top=(banner&&!banner.classList.co
 if(banner){new MutationObserver(headerOffset).observe(banner,{attributes:true,attributeFilter:['class','style']});if(typeof ResizeObserver!=='undefined')new ResizeObserver(headerOffset).observe(banner);}window.addEventListener('resize',headerOffset);headerOffset();
 })();
 
+
+/* Carrega o cabeçalho incremental sem substituir o HTML atual. */
+(()=>{const script=document.createElement('script');script.src=new URL('martins_header_compacto.js',document.currentScript?.src||document.baseURI).href;script.defer=true;document.head.append(script);})();

@@ -7,7 +7,7 @@
     "test": "node --test scripts/*.test.cjs",
     "check": "node scripts/check-static.cjs",
     "audit:source": "node scripts/auditar-publicacao.cjs",
-    "test:browser": "node scripts/qa-browser-horas.cjs && node scripts/qa-browser-fluxos.cjs && node scripts/qa-browser-navegacao.cjs && node scripts/qa-browser-materiais.cjs && node scripts/qa-browser-clientes.cjs && node scripts/qa-browser-frota.cjs && node scripts/qa-browser-reserva-consumo.cjs",
+    "test:browser": "node scripts/qa-browser-horas.cjs && node scripts/qa-browser-fluxos.cjs && node scripts/qa-browser-navegacao.cjs && node scripts/qa-browser-materiais.cjs && node scripts/qa-browser-clientes.cjs && node scripts/qa-browser-frota.cjs && node scripts/qa-browser-reserva-consumo.cjs && node scripts/qa-browser-recebimentos.cjs",
     "test:browser:hml": "node scripts/qa-browser-supabase-hml.cjs",
     "test:supabase:remote": "node scripts/homologar-supabase-remoto.cjs",
     "test:browser:financeiro": "node scripts/qa-browser-financeiro-usuario.cjs"

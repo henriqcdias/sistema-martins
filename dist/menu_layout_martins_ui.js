@@ -25,3 +25,6 @@ if(banner){new MutationObserver(headerOffset).observe(banner,{attributes:true,at
 
 /* Carrega o cabeçalho incremental sem substituir o HTML atual. */
 (()=>{const script=document.createElement('script');script.src=new URL('martins_header_compacto.js',document.currentScript?.src||document.baseURI).href;script.defer=true;document.head.append(script);})();
+
+/* Melhoria 2: extensão progressiva sem substituir o drawer. */
+(()=>{const s=document.createElement('script');s.src=new URL('martins_menu_inteligente_incremental.js',document.currentScript?.src||document.baseURI).href;s.defer=true;document.head.append(s);})();

@@ -110,3 +110,17 @@ const observer=new MutationObserver(()=>{observer.disconnect();corrigir();const 
 const start=()=>{const root=document.getElementById('drawer-menu-lateral');if(root)observer.observe(root,{childList:true,subtree:true});};
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',start,{once:true});else start();
 })();
+
+/* MARTINS_HML_ICONS_PLANNING_V2 */
+(()=>{'use strict';const style=document.createElement('style');style.dataset.martinsMenuIconFix='v2';style.textContent=`
+/* Somente os dois atalhos de Planejamento e Conferencia: nao altera rotas. */
+#drawer-menu-lateral #sm-planning #ma-menu-planejamento,
+#drawer-menu-lateral #sm-planning #ma-menu-conferencia{display:flex!important;flex-direction:row!important;align-items:center!important;justify-content:flex-start!important;gap:10px!important;min-height:44px!important;height:auto!important;width:100%!important;padding:9px 10px!important;margin:2px 0!important;text-align:left!important;box-sizing:border-box!important}
+#drawer-menu-lateral #sm-planning #ma-menu-planejamento svg,
+#drawer-menu-lateral #sm-planning #ma-menu-conferencia svg{display:block!important;width:20px!important;height:20px!important;min-width:20px!important;max-width:20px!important;max-height:20px!important;flex:0 0 20px!important;transform:none!important}
+#drawer-menu-lateral #sm-planning #ma-menu-planejamento img,
+#drawer-menu-lateral #sm-planning #ma-menu-conferencia img{width:20px!important;height:20px!important;max-width:20px!important;max-height:20px!important;object-fit:contain!important;flex:0 0 20px!important}
+#drawer-menu-lateral #sm-planning #ma-menu-planejamento>span,
+#drawer-menu-lateral #sm-planning #ma-menu-conferencia>span{font-size:13px!important;line-height:1.4!important;min-width:0!important;margin:0!important}
+#drawer-menu-lateral #sm-planning>summary{font-size:12px!important;padding:10px!important}
+`;document.head.appendChild(style)})();

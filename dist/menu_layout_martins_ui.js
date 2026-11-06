@@ -79,3 +79,34 @@ css.textContent=`
 `;
 document.head.appendChild(css);
 })();
+
+/* MARTINS_HML_CORRIGE_MAIS_DUPLICADO_V1 */
+(()=>{'use strict';
+// Corrige somente prefixos + repetidos; não altera ações, IDs nem permissões.
+function corrigir(){
+ const root=document.getElementById('drawer-menu-lateral');if(!root)return;
+ for(const el of root.querySelectorAll('button,a')){
+  if(!/cadastrar\s+nova\s+obra/i.test(el.textContent||''))continue;
+  const walker=document.createTreeWalker(el,NodeFilter.SHOW_TEXT);const nodes=[];
+  while(walker.nextNode())nodes.push(walker.currentNode);
+  const significant=nodes.filter(n=>n.nodeValue.trim());
+  const text=significant.map(n=>n.nodeValue).join(' ').replace(/\s+/g,' ').trim();
+  if(!/^(?:\+\s*){2,}cadastrar\s+nova\s+obra/i.test(text))continue;
+  let remaining=2;
+  for(const node of significant){
+   if(remaining===0)break;
+   const original=node.nodeValue;
+   node.nodeValue=original.replace(/^(\s*)(?:\+\s*)+/,(full,space)=>{
+    const count=(full.match(/\+/g)||[]).length;
+    if(!count)return full;
+    if(remaining===2){remaining=1;return space+'+ ';}
+    remaining=0;return space;
+   });
+  }
+ }
+}
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',corrigir,{once:true});else corrigir();
+const observer=new MutationObserver(()=>{observer.disconnect();corrigir();const root=document.getElementById('drawer-menu-lateral');if(root)observer.observe(root,{childList:true,subtree:true});});
+const start=()=>{const root=document.getElementById('drawer-menu-lateral');if(root)observer.observe(root,{childList:true,subtree:true});};
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',start,{once:true});else start();
+})();

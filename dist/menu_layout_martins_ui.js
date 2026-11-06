@@ -139,3 +139,45 @@ function ajustarOrdem(){
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>queueMicrotask(ajustarOrdem),{once:true});else queueMicrotask(ajustarOrdem);
 const drawer=document.getElementById('drawer-menu-lateral');if(drawer){drawer.addEventListener('click',()=>queueMicrotask(ajustarOrdem),{capture:true});}
 })();
+
+/* MARTINS_HML_ORDEM_MESTRE_V1 */
+(()=>{'use strict';
+const definitions=[['sm-works','PAINEL & OBRAS'],['sm-rdo-freq','RDO & FREQUÊNCIA'],['sm-rh','RECURSOS HUMANOS'],['sm-finance','FINANCEIRO'],['sm-supply','SUPRIMENTOS E ESTOQUE'],['sm-sales','COMERCIAL E VENDAS'],['sm-metal','ESQUADRIAS E SERRALHERIA'],['sm-reports','CENTRAL DE RELATÓRIOS & ADMIN']];
+function apply(){
+ const drawer=document.getElementById('drawer-menu-lateral');const list=drawer?.querySelector('.overflow-y-auto');if(!list||list.dataset.martinsOrdemMestre==='1')return;
+ const groups=new Map();
+ for(const [id,title] of definitions){let group=document.getElementById(id);if(!group){group=document.createElement('details');group.id=id;group.className='sm-group';group.open=true;const summary=document.createElement('summary');group.append(summary);}group.classList.add('sm-group');let summary=group.querySelector(':scope > summary');if(!summary){summary=document.createElement('summary');group.prepend(summary);}summary.textContent=title;groups.set(id,group);}
+ // Classificar somente blocos de primeiro nivel; nunca mover botões internos isoladamente.
+ const classify=(el)=>{
+  const text=(el.textContent||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
+  const nav=[...el.querySelectorAll('[data-nav]')].map(n=>n.dataset.nav||'').join(' ').toLowerCase()+' '+(el.dataset.nav||'');
+  if(/rdo|diario|frequencia|historico/.test(text+' '+nav))return 'sm-rdo-freq';
+  if(/estoque|suprimento|almoxarif|deposito|pedido de material|compras/.test(text+' '+nav))return 'sm-supply';
+  if(/venda|comercial|orcamento|cliente/.test(text+' '+nav))return 'sm-sales';
+  if(/esquadria|serralheria/.test(text+' '+nav))return 'sm-metal';
+  if(/relatorio|administr|configurac|usuario|permiss/.test(text+' '+nav))return 'sm-reports';
+  if(/funcionario|colaborador|recurso humano|folha|ferias/.test(text+' '+nav))return 'sm-rh';
+  if(/financeir|fluxo de caixa|contas banc|despesa|receita|pagamento/.test(text+' '+nav))return 'sm-finance';
+  return 'sm-works';
+ };
+ const known=new Set(definitions.map(([id])=>id));
+ for(const child of [...list.children]){
+  if(known.has(child.id))continue;
+  if(child.matches('script,style'))continue;
+  if(!child.querySelector('button,a,[data-nav],details')&&!child.matches('button,a,[data-nav]'))continue;
+  groups.get(classify(child)).append(child);
+ }
+ // Dentro de Obras: painel primeiro; Planejamento e Equipes depois da Gestão de Obras.
+ const works=groups.get('sm-works');const plan=document.getElementById('sm-planning');
+ const dashboard=[...works.querySelectorAll('[data-nav]')].find(el=>el.dataset.nav==='gestao');
+ const topDashboard=dashboard&&[...works.children].find(ch=>ch===dashboard||ch.contains(dashboard));
+ if(plan&&plan.parentElement===works&&topDashboard)topDashboard.after(plan);
+ // Manter os oito grupos na sequencia aprovada, sem alterar handlers ou rotas.
+ for(const [id] of definitions)list.append(groups.get(id));
+ list.dataset.martinsOrdemMestre='1';
+}
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>setTimeout(apply,0),{once:true});else setTimeout(apply,0);
+const old=window.abrirDrawerMenu;
+function onOpen(){setTimeout(apply,0)}
+document.addEventListener('click',e=>{if(e.target.closest('#btn-abrir-drawer-header,#bnav-btn-menu'))onOpen()});
+})();

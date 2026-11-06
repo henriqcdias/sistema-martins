@@ -81,6 +81,7 @@ BEGIN
  IF d ? 'vencimento' AND d->>'vencimento'<>'' THEN PERFORM (d->>'vencimento')::date; END IF;
  conta:=nullif(d->>'conta_id','')::uuid;
  PERFORM pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended(e::text||'financeiro_usuario',0));
+ IF NOT martins_hml_v1.fin_membro(e) THEN RAISE EXCEPTION 'Acesso negado' USING ERRCODE='42501'; END IF;
  SELECT * INTO r FROM martins_hml_v1.fin_lancamentos WHERE empresa_id=e AND id=l;
  IF FOUND AND NOT martins_hml_v1.fin_pode(e,l,true) THEN RAISE EXCEPTION 'Lançamento não editável ou não autorizado' USING ERRCODE='42501'; END IF;
  req:=jsonb_build_object('id',l,'versao',revisao,'dados',d);

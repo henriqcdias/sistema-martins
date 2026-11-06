@@ -28,3 +28,6 @@ if(banner){new MutationObserver(headerOffset).observe(banner,{attributes:true,at
 
 /* Melhoria 2: extensão progressiva sem substituir o drawer. */
 (()=>{const s=document.createElement('script');s.src=new URL('martins_menu_inteligente_incremental.js',document.currentScript?.src||document.baseURI).href;s.defer=true;document.head.append(s);})();
+
+/* Melhoria 3: ajustes não destrutivos na barra mobile existente. */
+(()=>{const s=document.createElement('script');s.src=new URL('martins_barra_mobile_incremental.js',document.currentScript?.src||document.baseURI).href;s.defer=true;document.head.append(s);})();

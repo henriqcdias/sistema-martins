@@ -11,7 +11,9 @@
     "test:browser:hml": "node scripts/qa-browser-supabase-hml.cjs",
     "test:supabase:remote": "node scripts/homologar-supabase-remoto.cjs",
     "test:browser:financeiro": "node scripts/qa-browser-financeiro-usuario.cjs",
-    "test:nfe:validacao": "node scripts/testar-nfe-validacao.cjs"
+    "test:nfe:validacao": "node scripts/testar-nfe-validacao.cjs",
+    "test:browser:nfeintegracao": "node scripts/qa-browser-nfe-integracao.cjs",
+    "test:nfe:integracao": "node scripts/qa-nfe-fim-a-fim.cjs"
   },
   "devDependencies": {
     "pdf-lib": "1.17.1",

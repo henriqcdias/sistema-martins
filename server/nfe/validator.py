@@ -4,6 +4,7 @@ import hashlib
 import io
 import json
 import zipfile
+from decimal import Decimal
 from datetime import datetime, timezone
 from pathlib import Path
 from lxml import etree
@@ -97,6 +98,26 @@ def validate(raw):
         result['chave'] = target[3:]
         result['finalidade'] = verified.signed_xml.findtext('{'+NS+'}ide/{'+NS+'}finNFe')
         result['itens_assinados'] = len(verified.signed_xml.findall('{'+NS+'}det'))
+        signed = verified.signed_xml
+        def value(path):
+            return signed.findtext('/'.join('{'+NS+'}'+p for p in path.split('/')))
+        def cents(v):
+            n = Decimal(v) * 100
+            if n != n.to_integral_value() or not 0 <= n <= 9007199254740991:
+                raise ValueError('Centavos inválidos')
+            return int(n)
+        result['dados_assinados'] = {
+            'numero': value('ide/nNF'), 'serie': value('ide/serie'),
+            'fornecedor': value('emit/CNPJ') or value('emit/CPF'), 'data_emissao': value('ide/dhEmi')[:10],
+            'valor_centavos': cents(value('total/ICMSTot/vNF')),
+            'itens': [{'nItem': det.get('nItem'), 'codigo': det.findtext('{'+NS+'}prod/{'+NS+'}cProd'),
+                       'unidade': det.findtext('{'+NS+'}prod/{'+NS+'}uCom'),
+                       'quantidade': det.findtext('{'+NS+'}prod/{'+NS+'}qCom')}
+                      for det in signed.findall('{'+NS+'}det')],
+            'parcelas': [{'numero': dup.findtext('{'+NS+'}nDup'), 'vencimento': dup.findtext('{'+NS+'}dVenc'),
+                          'valorCentavos': cents(dup.findtext('{'+NS+'}vDup'))}
+                         for dup in signed.findall('{'+NS+'}cobr/{'+NS+'}dup')]}
+
     except Exception as exc:
         result['assinatura']['erro'] = type(exc).__name__
     return result

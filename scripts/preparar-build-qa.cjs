@@ -20,6 +20,12 @@ function change(file, before, after) {
   if (!original.includes(before)) throw new Error('Contrato inesperado em ' + file + ': ' + before.slice(0, 60));
   fs.writeFileSync(f, original.replace(before, after));
 }
+function changeAll(file, before, after) {
+  const f = path.join(tmp, file);
+  const original = fs.readFileSync(f, 'utf8');
+  if (!original.includes(before)) throw new Error('Contrato inesperado em ' + file + ': ' + before.slice(0, 60));
+  fs.writeFileSync(f, original.split(before).join(after));
+}
 function walk(dir) { return fs.readdirSync(dir, {withFileTypes:true}).flatMap(e => e.isDirectory() ? walk(path.join(dir,e.name)) : [path.join(dir,e.name)]); }
 try {
   fs.cpSync(source, tmp, {recursive:true});
@@ -29,6 +35,8 @@ try {
   // Diferencia o QA da producao para evitar confusao na interface.
   change('auth-v5.js', 'Projeto de produção divergente.', 'Projeto de homologação QA divergente.');
   change('auth-v5.js', 'A chave pública do Supabase de produção ainda não foi configurada na publicação.', 'A chave pública do Supabase QA ainda não foi configurada na publicação.');
+  // Tela de login e mensagens: "Supabase de produção" vira "Supabase de homologação".
+  for (const file of ['index.html', 'auth-v5.js', 'auth-ui-v5.js']) changeAll(file, 'Supabase de produção', 'Supabase de homologação');
   // Configuracao no navegador: chave publicavel e URL nao sao segredos; nunca incluir service_role.
   fs.writeFileSync(path.join(tmp,'producao-config.js'),
     'window.MARTINS_SUPABASE_ENV_CONFIG = Object.freeze(' + JSON.stringify({

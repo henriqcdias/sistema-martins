@@ -55,6 +55,11 @@ test('Artefato QA aponta só para o projeto QA, sem produção e sem segredos', 
     a.match(html, new RegExp("connect-src 'self' " + QA.replace(/\./g, '\\.')));
     const cfg = fs.readFileSync(path.join(saida, 'producao-config.js'), 'utf8');
     a.ok(cfg.includes(QA) && cfg.includes(CHAVE_FALSA));
+    for (const f of ['index.html', 'auth-v5.js', 'auth-ui-v5.js']) {
+      const t = fs.readFileSync(path.join(saida, f), 'utf8');
+      a.equal(t.includes('Supabase de produção'), false, 'texto de produção na tela QA: ' + f);
+    }
+    a.match(html, /E-mail do Supabase de homologação/);
     a.match(fs.readFileSync(path.join(saida, 'sw.js'), 'utf8'), /martins-erp-qa-[0-9a-f]{16}/);
     for (const proibido of ['qa-config.js', 'qa-public-settings.js', 'qa-auth-ui.js']) a.equal(fs.existsSync(path.join(saida, proibido)), false);
   } finally { fs.rmSync(tmp, { recursive: true, force: true }); }

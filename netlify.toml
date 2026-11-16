@@ -1,0 +1,7 @@
+[context.production]
+  command = "node scripts/preparar-build-producao.cjs"
+  publish = "dist-producao"
+
+[context.deploy-preview]
+  command = "node scripts/preparar-build-producao.cjs"
+  publish = "dist-producao"

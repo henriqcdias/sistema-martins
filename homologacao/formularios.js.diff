@@ -1,0 +1,72 @@
+--- orig/dist-producao-fonte/formularios.js	2026-11-15 17:42:47.014779144 +0000
++++ m5/Sistema_Martins_e854bf2/dist-producao-fonte/formularios.js	2026-11-15 17:43:22.705058438 +0000
+@@ -2,7 +2,7 @@
+  'use strict';
+  const W=window,D=document,mods=['funcionarios','obras','planejamento','rdos','frequencia','orcamentos'];
+  const uuid=x=>typeof x==='string'&&/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i.test(x);
+- let api=null,empresa=null,geracao=0,ocupado=0,dirty=false;
++ let api=null,empresa=null,geracao=0,ocupado=0,dirty=false,diag={};
+  const dados=Object.fromEntries(mods.map(m=>[m,new Map()]));let catalogos={obras:[],funcionarios:[]};
+  const el=id=>D.getElementById(id),val=id=>el(id)?.value?.trim()||'';
+  const hoje=()=>new Intl.DateTimeFormat('en-CA',{timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+@@ -79,6 +79,15 @@
+   for(const name of ['renderColaboradoresTable','filtrarERenderizarQuadroColaboradoresV169','renderListaOrcamentosVendas','renderHistorico','renderAuditoriaPonto'])try{W[name]?.();}catch(error){console.warn('Projeção de tela',name,error.message);}
+   seletores();
+  }
++ const ROTULOS={conexao:'falha de conexão com o Supabase',permissao:'acesso negado pelo servidor (permissão ou sessão)',contrato:'função ou schema indisponível na API do Supabase',limite:'limite de requisições do Supabase',resposta:'resposta fora do contrato esperado'};
++ function classificarFalha(erro){
++  const c=String(erro?.code||''),t=String(erro?.message||'');
++  if(c==='QA_REDE')return 'conexao';
++  if(c==='429'||/rate_limit/i.test(c))return 'limite';
++  if(['PGRST106','PGRST202','404','42883','CONFIGURACAO'].includes(c))return 'contrato';
++  if(['42501','401','403','PGRST301'].includes(c)||/não autorizada|sess[ãa]o expirada/i.test(t))return 'permissao';
++  return 'resposta';
++ }
+  async function carregar(){
+   const e=requireEmpresa(),g=geracao,uid=contexto().uid;
+   const perms=contexto().vinculos.find(x=>x.empresa_id===e).permissoes;
+@@ -103,17 +112,29 @@
+   if(g!==geracao||e!==empresa||contexto()?.uid!==uid)return;
+   catalogos=resultados[0].status==='fulfilled'?resultados[0].value:vazio;
+   for(const m of mods)dados[m].clear();
+-  const falhas=resultados[0].status==='rejected'?['catálogo']:[];
++  const falhas=[],causas={};
++  if(resultados[0].status==='rejected'){falhas.push('catálogo');causas['catálogo']=classificarFalha(resultados[0].reason);}
++  const vazios=[];
+   modulos.forEach((m,i)=>{
+    const resultado=resultados[i+1];
+-   if(resultado.status==='fulfilled')resultado.value.forEach(r=>dados[m].set(r.id,r));
+-   else falhas.push(m);
++   if(resultado.status==='fulfilled'){resultado.value.forEach(r=>dados[m].set(r.id,r));if(!resultado.value.length)vazios.push(m);}
++   else{falhas.push(m);causas[m]=classificarFalha(resultado.reason);}
+   });
+-  D.body.dataset.empresaProducao='ativa';atualizarVisoes();resumo();
+-  mensagem(falhas.length?'Consulta indisponível: '+falhas.join(', ')+'. Use Atualizar dados.':
+-   'Consulta concluída para '+(contexto().vinculos.find(x=>x.empresa_id===e)?.nomeEmpresa||e),falhas.length>0);
++  // Diferencia: sem permissão de leitura, falha (conexão/permissão/contrato) e consulta vazia sem erro.
++  const semLeitura=mods.filter(m=>!perms[m]?.ler);
++  const estadoFunc=semLeitura.includes('funcionarios')?'sem_permissao_leitura':causas.funcionarios||causas['catálogo']||(vazios.includes('funcionarios')?'vazio':'ok');
++  diag={empresa:e,funcionarios:estadoFunc,falhas:{...causas},semLeitura:[...semLeitura],vazios:[...vazios]};
++  D.body.dataset.empresaProducao='ativa';D.body.dataset.cargaFuncionarios=estadoFunc;atualizarVisoes();resumo();
++  const nomeEmpresa=contexto().vinculos.find(x=>x.empresa_id===e)?.nomeEmpresa||e;
++  const detalhes=[...new Set(Object.values(causas))].map(c=>ROTULOS[c]);
++  const avisos=[];
++  if(semLeitura.includes('funcionarios'))avisos.push('Este vínculo não tem permissão de leitura de Funcionários; peça a liberação ao administrador.');
++  if(estadoFunc==='vazio')avisos.push('A consulta de Funcionários respondeu sem erro e não há funcionários cadastrados nesta empresa.');
++  const erro=falhas.length>0||semLeitura.includes('funcionarios');
++  mensagem(falhas.length?'Consulta indisponível: '+falhas.join(', ')+'. Motivo: '+detalhes.join('; ')+'. '+avisos.join(' ')+' Use Atualizar dados.':
++   'Consulta concluída para '+nomeEmpresa+'.'+(avisos.length?' '+avisos.join(' '):''),erro);
+  }
+- function zerar(){geracao++;api?.reset();api=null;empresa=null;for(const m of mods)dados[m].clear();catalogos={obras:[],funcionarios:[]};D.body.dataset.sessaoProducao='inativa';D.body.dataset.empresaProducao='pendente';instalarLeituras();}
++ function zerar(){diag={};delete D.body.dataset.cargaFuncionarios;geracao++;api?.reset();api=null;empresa=null;for(const m of mods)dados[m].clear();catalogos={obras:[],funcionarios:[]};D.body.dataset.sessaoProducao='inativa';D.body.dataset.empresaProducao='pendente';instalarLeituras();}
+  function usuarioInterface(c){const v=c?.vinculos.find(x=>x.empresa_id===empresa);const user=c?{...c,perfil:v?.papelServidor==='master'?'Master':v?.permissoes.funcionarios?.ler?'RH':'Operacional',empresaId:empresa}:null;W.currentLoggedUser=user;if(typeof currentLoggedUser!=='undefined')currentLoggedUser=user;}
+  W.MartinsProducaoOnSession=async c=>{
+   zerar();if(!c){usuarioInterface(null);return;}empresa=W.empresaFrequenciaWork;usuarioInterface(c);api=W.MartinsProducaoClient.create({rpc:W.MartinsProducaoRpc,context:contexto});
+@@ -236,6 +257,6 @@
+    const b=event.target.closest?.('#btn-logout-header');if(b){event.preventDefault();event.stopImmediatePropagation();W.encerrarSessaoSupabaseWork().finally(()=>location.reload());}},true);
+  }
+  async function login(form){const b=el('btn-entrar-gate');if(b.disabled)return;b.disabled=true;try{const r=await W.autenticarUsuarioSupabaseWork(val('gate-usuario-input'),el('gate-senha-input').value);if(!r.sucesso)throw Error(r.erro);el('gate-senha-input').value='';W.exibirSessaoQaWork();}catch(error){if(el('login-erro-msg'))el('login-erro-msg').textContent=error.message;el('login-erro-alerta')?.classList.remove('hidden');}finally{b.disabled=false;}}
+- W.MartinsOperacional=Object.freeze({carregar,listar,enviar,frequencia,estado:()=>({empresa,ocupado,dirty}),handlers});
++ W.MartinsOperacional=Object.freeze({carregar,listar,enviar,frequencia,estado:()=>({empresa,ocupado,dirty}),diagnostico:()=>clone(diag),handlers});
+  if(D.readyState==='loading')D.addEventListener('DOMContentLoaded',inicializar);else inicializar();
+ })();

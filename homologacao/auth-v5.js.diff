@@ -1,0 +1,123 @@
+--- orig/dist-producao-fonte/auth-v5.js	2026-11-15 17:42:47.014820428 +0000
++++ m5/Sistema_Martins_e854bf2/dist-producao-fonte/auth-v5.js	2026-11-15 17:43:04.627993180 +0000
+@@ -2,6 +2,11 @@
+ (()=>{'use strict';const SCHEMA_CONTRATO_WORK='public';let contextoOperacional=null;let geracaoAuth=0;
+   let contexto = null;
+   let sessao = null;
++  let timerRenovacao = null;
++  let renovacao = null;
++  const MARGEM_RENOVACAO_MS = 120000; // renova antes de o access token expirar
++  const MARGEM_RPC_MS = 30000;
++  const FALHAS_TRANSITORIAS = ['QA_REDE', '429', 'over_request_rate_limit', 'CONTEXTO_INDISPONIVEL'];
+   const documentos = new Map();
+   const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+   const dataValida = data => typeof data === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(data) &&
+@@ -123,6 +128,8 @@
+ 
+   function limparSessaoWork() {
+     geracaoAuth++;
++    if (timerRenovacao && typeof clearTimeout === 'function') clearTimeout(timerRenovacao);
++    timerRenovacao = null;
+     contexto = null;
+     sessao = null;
+     window.empresaFrequenciaWork = null;
+@@ -198,6 +205,7 @@
+     });
+     sessionStorage.setItem(chaveSessaoQa, res.refresh_token);
+     sessao = ativa;
++    agendarRenovacaoWork();
+     const ultima = sessionStorage.getItem('martins.prod.empresa');
+     window.empresaFrequenciaWork = contexto.empresas.includes(ultima) ? ultima :
+       (contexto.empresas.length === 1 ? contexto.empresas[0] : null);
+@@ -217,6 +225,65 @@
+     return { sucesso: true, usuario: contexto, empresasAutorizadas: contexto.empresas };
+   }
+ 
++  // Renovação silenciosa do access token (somente o refresh token da própria sessão v5).
++  // Mantém todas as verificações: mesmo UID, vínculos revalidados no servidor e descarte por geração.
++  function agendarRenovacaoWork(espera) {
++    if (typeof setTimeout !== 'function') return;
++    if (timerRenovacao && typeof clearTimeout === 'function') clearTimeout(timerRenovacao);
++    timerRenovacao = null;
++    if (!contexto) return;
++    const ms = espera ?? Math.max(5000, contexto.expiraEm - Date.now() - MARGEM_RENOVACAO_MS);
++    timerRenovacao = setTimeout(() => { window.renovarSessaoWork().catch(() => {}); }, Math.min(ms, 2147483647));
++  }
++
++  window.renovarSessaoWork = function () {
++    if (renovacao) return renovacao;
++    const ativa = sessao, esperada = geracaoAuth;
++    if (!ativa || !contexto) return Promise.resolve(false);
++    const promessa = (async () => {
++      try {
++        const token = sessionStorage.getItem(chaveSessaoQa);
++        if (!token) falhar('Sessão expirada. Entre novamente.', '42501');
++        const res = await requisicaoWork(ativa.config, '/auth/v1/token?grant_type=refresh_token', {
++          body: { refresh_token: token }
++        });
++        if (esperada !== geracaoAuth || sessao !== ativa) falhar('Sessão alterada.', '42501');
++        if (res?.user?.id !== ativa.uid || !res.access_token || !res.refresh_token || !(res.expires_in > 0)) {
++          falhar('Sessão Supabase inválida.', 'SESSAO');
++        }
++        sessionStorage.setItem(chaveSessaoQa, res.refresh_token);
++        const provisoria = { uid: ativa.uid, token: res.access_token, config: ativa.config };
++        const rows = await vinculosWork(provisoria);
++        if (esperada !== geracaoAuth || sessao !== ativa) falhar('Sessão alterada.', '42501');
++        if (!rows.length) falhar('A conta não tem mais vínculo ativo em produção.', 'SEM_VINCULO');
++        const empresaAtual = window.empresaFrequenciaWork;
++        if (empresaAtual && !rows.some(r => r.empresa_id === empresaAtual)) {
++          falhar('A empresa selecionada não está mais autorizada.', '42501');
++        }
++        ativa.token = res.access_token;
++        ativa.nome = provisoria.nome || ativa.nome;
++        contexto = Object.freeze({
++          ...contexto, nome: ativa.nome || contexto.nome,
++          empresas: Object.freeze(rows.map(r => r.empresa_id)),
++          vinculos: Object.freeze(rows.map(r => Object.freeze(r))),
++          expiraEm: Date.now() + res.expires_in * 1000
++        });
++        agendarRenovacaoWork();
++        return true;
++      } catch (erro) {
++        if (esperada === geracaoAuth && sessao === ativa) {
++          if (FALHAS_TRANSITORIAS.includes(erro.code)) agendarRenovacaoWork(30000);
++          else limparSessaoWork();
++        }
++        throw erro;
++      }
++    })();
++    renovacao = promessa;
++    const liberar = () => { if (renovacao === promessa) renovacao = null; };
++    promessa.then(liberar, liberar);
++    return promessa;
++  };
++
+   window.autenticarUsuarioSistema = window.autenticarUsuarioSupabaseWork = async function (email, senha) {
+     limparSessaoWork();
+     const esperada=geracaoAuth;
+@@ -245,7 +312,7 @@
+       if (res?.refresh_token) sessionStorage.setItem(chaveSessaoQa, res.refresh_token);
+       return await estabelecerSessaoWork(res, config, undefined, esperada);
+     } catch (error) {
+-      if (!['QA_REDE','QA_VINCULOS_API','PGRST106','429','over_request_rate_limit'].includes(error.code)) limparSessaoWork();
++      if (!['QA_REDE','QA_VINCULOS_API','PGRST106','429','over_request_rate_limit','CONTEXTO_INDISPONIVEL'].includes(error.code)) limparSessaoWork();
+       return { sucesso: false, erro: error.message, codigo: error.code };
+     }
+   };
+@@ -312,12 +379,16 @@
+     window.MartinsProducaoOnEmpresa?.(empresa);
+   };
+   async function rpcProducao(nome,args){
++    if(sessao&&contexto&&contexto.expiraEm-Date.now()<MARGEM_RPC_MS)await window.renovarSessaoWork();
+     const ativa=sessao;
+     if(!ativa||!window.obterContextoSegurancaAutenticadoWork())falhar('Sessão expirada. Entre novamente.','42501');
+     const resultado=await requisicaoWork(ativa.config,'/rest/v1/rpc/'+nome,{token:ativa.token,body:args,schema:'public'});
+     if(sessao!==ativa)falhar('Sessão alterada; resposta descartada.','42501');
+     return resultado;
+   }
++  if(typeof document!=='undefined'&&typeof document.addEventListener==='function')document.addEventListener('visibilitychange',()=>{
++    if(document.visibilityState==='visible'&&sessao&&contexto&&contexto.expiraEm-Date.now()<MARGEM_RENOVACAO_MS)window.renovarSessaoWork().catch(()=>{});
++  });
+   window.MartinsProducaoRpc=Object.freeze({
+     contexto:()=>rpcProducao('martins_producao_contexto',{}),
+     consultar:args=>rpcProducao('martins_producao_consultar',args),

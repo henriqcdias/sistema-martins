@@ -179,7 +179,8 @@ async function novo(page, campos) {
     await pm2.fill('#nc-nome', 'CPF Errado'); await pm2.fill('#nc-funcao', 'Servente'); await pm2.fill('#nc-cpf', '123');
     await pm2.click('#btn-salvar-colaborador');
     await pm2.waitForFunction(() => /CPF inválido/.test(document.getElementById('toast-msg')?.textContent || '') && getComputedStyle(document.getElementById('toast')).opacity === '1', null, { timeout: 8000 });
-    const topo = await pm2.evaluate(() => { const t = document.getElementById('toast').getBoundingClientRect(); const n = document.elementFromPoint(t.left + t.width / 2, t.top + t.height / 2); return !!n?.closest('#toast'); });
+    // O toast não captura cliques (pointer-events: none); para medir a ordem de camadas, habilita só durante a medição.
+    const topo = await pm2.evaluate(() => { const el = document.getElementById('toast'); el.style.setProperty('pointer-events', 'auto', 'important'); const t = el.getBoundingClientRect(); const n = document.elementFromPoint(t.left + t.width / 2, t.top + t.height / 2); el.style.removeProperty('pointer-events'); return !!n?.closest('#toast'); });
     if (process.env.E2E_PRINTS) await pm2.screenshot({ path: path.join(process.env.E2E_PRINTS, 'toast-sobre-modal.png') });
     check(topo, 'com o modal aberto, o toast de erro fica na frente do desfoque (legível)');
     check(await pm2.$eval('#toast', n => n.getAttribute('role') === 'alert' && n.style.borderColor !== ''), 'toast de erro é anunciado (role=alert) e destacado');
@@ -188,6 +189,24 @@ async function novo(page, campos) {
     await pm2.waitForFunction(() => /Salvamento confirmado/.test(document.getElementById('producao-status')?.textContent || ''), null, { timeout: 15000 });
     check((await db.query(`SELECT 1 FROM martins_producao_v1.registros WHERE modulo='funcionarios' AND dados->>'nome'='CPF Errado'`)).rows.length === 1,
       'depois de um erro do servidor, corrigir e salvar funciona (a operação recusada não fica travando o módulo)');
+
+    console.log('Botão MENU livre de sobreposição');
+    const menuLivre = async pg => pg.evaluate(() => {
+      const b = document.getElementById('btn-abrir-drawer-header'); const R = b.getBoundingClientRect(); const ruins = [];
+      for (const fx of [0.1, 0.5, 0.9]) for (const fy of [0.15, 0.5, 0.85]) { const n = document.elementFromPoint(R.left + R.width * fx, R.top + R.height * fy); if (!(n === b || b.contains(n))) ruins.push(n?.id || n?.tagName); }
+      return ruins;
+    });
+    check((await menuLivre(pm2)).length === 0, 'computador: os 9 pontos do botão MENU respondem ao clique (toast oculto não bloqueia)');
+    await pm2.evaluate(() => window.showToast('Teste de aviso', 'error'));
+    await pm2.waitForTimeout(400);
+    check((await menuLivre(pm2)).length === 0, 'computador: MENU continua clicável com um toast visível');
+    check(await pm2.evaluate(() => document.getElementById('toast').getBoundingClientRect().top > document.getElementById('main-app-header').getBoundingClientRect().bottom), 'toast aparece embaixo, longe do cabeçalho');
+    await pl.evaluate(() => window.MartinsCadastrosServidor.fechar()); await pl.waitForTimeout(300);
+    check((await menuLivre(pl)).length === 0, 'celular (390 px): os 9 pontos do botão MENU respondem ao clique');
+    await pm2.click('#btn-abrir-drawer-header');
+    await pm2.waitForTimeout(500);
+    check(await pm2.evaluate(() => { const d = document.querySelector('#drawer-menu, #menu-drawer, [id*=drawer]:not(#btn-abrir-drawer-header):not(#btn-fechar-drawer)'); return !!d && getComputedStyle(d).display !== 'none' && d.getBoundingClientRect().width > 0; }), 'clicar em MENU abre o menu lateral');
+    await pm2.keyboard.press('Escape'); await pm2.evaluate(() => document.getElementById('btn-fechar-drawer')?.click());
 
     console.log('F5 e cadastro de funcionário pelo RH (módulo v1)');
     await pm2.evaluate(() => window.MartinsCadastrosServidor.fechar());

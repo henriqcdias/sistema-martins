@@ -79,7 +79,12 @@
       body #empresa-sessao-qa { max-width: 100%; }
       body #empresa-sessao-qa select { min-height: 36px; }
     }
-    #toast { z-index: 2147483000 !important; }
+    /* Toast: o CSS compilado não tem bottom-4/right-4/translate-y-20, então a posição é explícita.
+       Fica acima de modais e nunca captura cliques (não tem controles), para não bloquear o MENU. */
+    #toast { position: fixed !important; z-index: 2147483000 !important; top: auto !important; left: auto; right: 16px; bottom: 88px;
+             max-width: min(92vw, 28rem); pointer-events: none !important; transition: opacity .25s ease, transform .25s ease; }
+    #toast.opacity-0 { opacity: 0; visibility: hidden; transform: translateY(12px); }
+    @media (max-width: 640px) { #toast { left: 12px; right: 12px; bottom: 84px; max-width: none; } }
     #view-financeiro::before { content: "Este Financeiro antigo grava só neste navegador. Despesas, centros de custo e contas bancárias compartilhados com a equipe ficam em “Cadastros e Despesas”, na barra superior."; display: block; padding: 1rem; }
   </style>
 </head>

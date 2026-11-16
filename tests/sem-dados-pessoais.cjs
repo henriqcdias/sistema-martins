@@ -39,3 +39,10 @@ test('Tela de cadastros não insere HTML vindo do servidor (sem innerHTML/insert
   const t = fs.readFileSync(path.join(raiz, 'dist-producao-fonte/cadastros-servidor.js'), 'utf8');
   a.equal(/innerHTML|outerHTML|insertAdjacentHTML|document\.write/.test(t), false);
 });
+
+test('Auditoria não traz ações fictícias atribuídas a pessoas reais', () => {
+  for (const arquivo of ['dist-producao-fonte/dist/app-martins.min.js', 'dist/dist/app-martins.min.js']) {
+    const t = fs.readFileSync(path.join(raiz, arquivo), 'utf8');
+    a.equal(/Conferiu entrega de 50 sacos|Registrou anotação confidencial no RDO sobre alinhamento/.test(t), false, arquivo);
+  }
+});

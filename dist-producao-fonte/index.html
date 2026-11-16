@@ -63,7 +63,7 @@
     body:not([data-sessao-producao="ativa"]) #tela-login-gate { display:flex!important;visibility:visible!important }
     body[data-sessao-producao="ativa"] #tela-login-gate { display:none!important }
     #view-usuarios, #nav-btn-usuarios, #drawer-item-grp-12-configuracoes-config-usuarios-permissoes,
-    #drawer-sec-usuarios, #view-financeiro > *, #btn-desbloquear-edicao-qa { display:none!important }
+    #drawer-sec-usuarios, #view-financeiro > :not(#financeiro-servidor), #btn-desbloquear-edicao-qa { display:none!important }
     body #drawer-menu-lateral { z-index: 10000; }
     body #btn-desbloquear-edicao-qa { position: fixed; bottom: calc(6.5rem + env(safe-area-inset-bottom, 0px)); right: 12px; z-index: 10001; min-height: 44px; }
     body #drawer-menu-lateral > div:last-child {
@@ -85,7 +85,6 @@
              max-width: min(92vw, 28rem); pointer-events: none !important; transition: opacity .25s ease, transform .25s ease; }
     #toast.opacity-0 { opacity: 0; visibility: hidden; transform: translateY(12px); }
     @media (max-width: 640px) { #toast { left: 12px; right: 12px; bottom: 84px; max-width: none; } }
-    #view-financeiro::before { content: "Este Financeiro antigo grava só neste navegador. Despesas, centros de custo e contas bancárias compartilhados com a equipe ficam em “Cadastros e Despesas”, na barra superior."; display: block; padding: 1rem; }
   </style>
 </head>
 <body class="bg-slate-100 text-slate-800 min-h-screen flex flex-col antialiased overflow-x-hidden w-full max-w-full">

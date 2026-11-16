@@ -208,6 +208,23 @@ async function novo(page, campos) {
     check(await pm2.evaluate(() => { const d = document.querySelector('#drawer-menu, #menu-drawer, [id*=drawer]:not(#btn-abrir-drawer-header):not(#btn-fechar-drawer)'); return !!d && getComputedStyle(d).display !== 'none' && d.getBoundingClientRect().width > 0; }), 'clicar em MENU abre o menu lateral');
     await pm2.keyboard.press('Escape'); await pm2.evaluate(() => document.getElementById('btn-fechar-drawer')?.click());
 
+    console.log('Financeiro');
+    await pm2.evaluate(() => window.navegarParaSecao('financeiro'));
+    await pm2.waitForFunction(() => { const sec = document.getElementById('financeiro-servidor'); return sec && sec.offsetParent !== null && sec.querySelectorAll('.fin-card').length === 3; }, null, { timeout: 15000 });
+    if (process.env.E2E_PRINTS) await pm2.screenshot({ path: path.join(process.env.E2E_PRINTS, 'financeiro.png') });
+    const fin = await pm2.evaluate(() => ({ atalhos: [...document.querySelectorAll('#financeiro-servidor .fin-atalho b')].map(n => n.textContent), pend: document.querySelector('#financeiro-servidor .fin-card strong').textContent, vazio: getComputedStyle(document.getElementById('financeiro-servidor')).display }));
+    check(fin.vazio !== 'none' && fin.atalhos.length === 4, 'Financeiro abre (não fica vazio) e mostra os 4 atalhos para o Master');
+    check(fin.pend === '1', 'resumo do Financeiro conta a despesa pendente de conferência (vinda do servidor)');
+    await pm2.click('#financeiro-servidor .fin-atalho:has-text("Despesas")');
+    await pm2.waitForFunction(() => document.querySelector('#cs-painel .cs-aba[aria-selected=true]')?.textContent === 'Despesas' && /Despesas:/.test(document.querySelector('[data-cs=status]')?.textContent || ''));
+    check(true, 'atalho Despesas abre o painel já na aba Despesas');
+    await pm2.evaluate(() => window.MartinsCadastrosServidor.fechar());
+    await pl.evaluate(() => window.navegarParaSecao('financeiro'));
+    await pl.waitForFunction(() => document.querySelectorAll('#financeiro-servidor .fin-card').length === 3, null, { timeout: 15000 });
+    const finL = await pl.evaluate(() => ({ atalhos: [...document.querySelectorAll('#financeiro-servidor .fin-atalho b')].map(n => n.textContent), texto: document.getElementById('financeiro-servidor').textContent }));
+    check(finL.atalhos.join() === 'Despesas' && finL.texto.includes('Somente os lançados por você') && !finL.texto.includes('1.500'), 'lançador (celular) vê só o atalho de Despesas e apenas os próprios valores');
+    check(await pl.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), 'Financeiro sem rolagem horizontal no celular');
+
     console.log('F5 e cadastro de funcionário pelo RH (módulo v1)');
     await pm2.evaluate(() => window.MartinsCadastrosServidor.fechar());
     await pm2.reload({ waitUntil: 'networkidle' });

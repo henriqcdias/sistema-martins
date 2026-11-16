@@ -308,14 +308,34 @@
       onclick: () => { aba = m; desenharAbas(); carregarAba().catch(e => mensagem(traduzir(e), true)); } })));
     if (!visiveis.length) { painel.querySelector('[data-cs=corpo]').replaceChildren(el('p', { classe: 'cs-vazio', texto: 'Seu vínculo não tem permissão de leitura em nenhum cadastro desta empresa. Peça a liberação ao Master.' })); }
   }
-  async function abrir() {
+  async function abrir(inicial) {
     if (!painel) montar();
     painel.hidden = false; D.body.classList.add('cs-aberto');
-    try { await sincronizarSessao(); painel.querySelector('[data-cs=empresa]').textContent = (vinculo()?.nomeEmpresa || '') + (master() ? ' · Master' : '') + (gravacao() ? '' : ' · somente leitura'); desenharAbas(); if (aba) await carregarAba(); }
+    try { await sincronizarSessao(); painel.querySelector('[data-cs=empresa]').textContent = (vinculo()?.nomeEmpresa || '') + (master() ? ' · Master' : '') + (gravacao() ? '' : ' · somente leitura'); if (MODULOS[inicial] && pode(inicial, 'ler')) aba = inicial; desenharAbas(); if (aba) await carregarAba(); }
     catch (e) { mensagem(traduzir(e), true); }
   }
   function fechar() { if (painel) painel.hidden = true; D.body.classList.remove('cs-aberto'); }
+  let estilosInstalados = false;
   function montar() {
+    estilos();
+    montarPainel();
+  }
+  function estilos() {
+    if (estilosInstalados) return; estilosInstalados = true;
+    D.head.append(el('style', { texto: `
+      #financeiro-servidor{font-family:Inter,system-ui,sans-serif;color:#0f172a;padding:16px;max-width:1100px}
+      #financeiro-servidor h2{font-size:20px;font-weight:800;margin:0 0 4px}#financeiro-servidor>p{color:#475569;margin:0 0 16px;font-size:14px}
+      .fin-resumo{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:16px}
+      .fin-card{background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:14px}.fin-card small{display:block;color:#64748b;font-weight:700;font-size:11px;text-transform:uppercase}
+      .fin-card strong{display:block;font-size:22px;font-weight:800;margin-top:4px}
+      .fin-atalhos{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+      .fin-atalho{text-align:left;background:#0f172a;color:#fff;border:0;border-radius:12px;padding:16px;cursor:pointer;min-height:44px}
+      .fin-atalho:hover{background:#1e293b}.fin-atalho b{display:block;color:#fbbf24;font-size:15px}.fin-atalho span{display:block;color:#cbd5e1;font-size:13px;margin-top:4px}
+      #financeiro-servidor .fin-pendente{margin:16px 0 0;background:#fef3c7;color:#78350f;border-radius:10px;padding:10px 12px;font-size:13px}
+      .fin-erro{color:#b91c1c;font-weight:600}
+`}));
+  }
+  function montarPainel() {
     D.head.append(el('style', { texto: `
       #cs-painel{position:fixed;inset:0;z-index:10200;background:#f8fafc;color:#0f172a;font-family:Inter,system-ui,sans-serif;display:flex;flex-direction:column}
       #cs-painel[hidden]{display:none}body.cs-aberto{overflow:hidden}
@@ -363,12 +383,59 @@
     D.addEventListener('keydown', ev => { if (ev.key === 'Escape' && painel && !painel.hidden) fechar(); });
   }
   function instalarBotao() {
+    montarFinanceiro();
     const barra = D.getElementById('barra-producao');
     if (!barra || barra.querySelector('[data-cs=abrir]')) return;
     barra.append(el('button', { type: 'button', 'data-cs': 'abrir', texto: 'Cadastros e Despesas', onclick: () => abrir() }));
   }
 
-  W.MartinsCadastrosServidor = Object.freeze({ abrir, fechar, modulos: ORDEM.slice() });
+  // ---------- Página do Financeiro ----------
+  // O Financeiro legado grava só no navegador e fica oculto pelo index.html. Esta página é a entrada
+  // do financeiro no servidor: resumo das despesas e atalhos para os cadastros financeiros.
+  const ATALHOS = [['despesas', 'Despesas', 'Lançar, conferir, aprovar, pagar e conciliar'], ['centros_custo', 'Centros de custo', 'Obra ou administrativo, sem texto livre'],
+    ['contas_bancarias', 'Contas bancárias', 'Contas por empresa'], ['fornecedores', 'Fornecedores e beneficiários', 'CPF/CNPJ único por empresa']];
+  let resumoEmCurso = null;
+  function montarFinanceiro() {
+    const view = D.getElementById('view-financeiro');
+    if (!view || D.getElementById('financeiro-servidor')) return;
+    estilos();
+    const sec = el('section', { id: 'financeiro-servidor', 'aria-labelledby': 'fin-titulo' },
+      el('h2', { id: 'fin-titulo', texto: 'Financeiro' }),
+      el('p', { texto: 'Dados gravados no servidor e compartilhados com a equipe autorizada da empresa ativa.' }),
+      el('div', { classe: 'fin-resumo', 'data-fin': 'resumo' }),
+      el('div', { classe: 'fin-atalhos', 'data-fin': 'atalhos' }),
+      el('p', { classe: 'fin-pendente', texto: 'Ainda não ligados ao servidor: fluxo de caixa, DRE/DFC, contas a receber e conciliação por extrato (OFX/CSV). Esses relatórios serão liberados quando os contratos correspondentes forem concluídos.' }));
+    view.prepend(sec);
+    new MutationObserver(() => { if (!view.classList.contains('hidden') && view.offsetParent !== null) atualizarFinanceiro(); }).observe(view, { attributes: true, attributeFilter: ['class', 'style'] });
+    if (view.offsetParent !== null) atualizarFinanceiro();
+  }
+  function atualizarFinanceiro() {
+    if (resumoEmCurso) return resumoEmCurso;
+    resumoEmCurso = (async () => {
+      const sec = D.getElementById('financeiro-servidor'); if (!sec) return;
+      const resumo = sec.querySelector('[data-fin=resumo]'), atalhos = sec.querySelector('[data-fin=atalhos]');
+      try {
+        await sincronizarSessao();
+        atalhos.replaceChildren(...ATALHOS.filter(([m]) => pode(m, 'ler')).map(([m, t, d]) => el('button', { type: 'button', classe: 'fin-atalho', onclick: () => abrir(m) }, el('b', { texto: t }), el('span', { texto: d }))));
+        if (!atalhos.children.length) atalhos.append(el('p', { texto: 'Seu vínculo não tem acesso ao Financeiro desta empresa. Peça a liberação ao Master.' }));
+        if (!pode('despesas', 'ler')) { resumo.replaceChildren(); return; }
+        const despesas = await listarTodos('despesas');
+        const mes = new Date().toISOString().slice(0, 7);
+        const ativas = despesas.filter(r => r.dados.estado !== 'cancelado');
+        const pendentes = ativas.filter(r => (r.dados.estado || 'pendente_conferencia') === 'pendente_conferencia');
+        const doMes = ativas.filter(r => String(r.dados.competencia || '').startsWith(mes));
+        const soma = l => l.reduce((t, r) => t + Number(r.dados.valor_centavos || 0), 0);
+        resumo.replaceChildren(
+          el('div', { classe: 'fin-card' }, el('small', { texto: 'Pendentes de conferência' }), el('strong', { texto: String(pendentes.length) }), el('span', { texto: reais(soma(pendentes)) })),
+          el('div', { classe: 'fin-card' }, el('small', { texto: 'Despesas do mês' }), el('strong', { texto: reais(soma(doMes)) }), el('span', { texto: doMes.length + ' lançamento(s)' })),
+          el('div', { classe: 'fin-card' }, el('small', { texto: master() ? 'Visão' : 'Seus lançamentos' }), el('strong', { texto: master() ? 'Master' : String(despesas.length) }), el('span', { texto: master() ? 'Inclui despesas confidenciais' : 'Somente os lançados por você' })));
+      } catch (e) { resumo.replaceChildren(el('p', { classe: 'fin-erro', texto: traduzir(e) })); }
+      finally { resumoEmCurso = null; }
+    })();
+    return resumoEmCurso;
+  }
+
+  W.MartinsCadastrosServidor = Object.freeze({ abrir, fechar, atualizarFinanceiro, modulos: ORDEM.slice() });
   if (D.readyState === 'loading') D.addEventListener('DOMContentLoaded', instalarBotao); else instalarBotao();
   new MutationObserver(instalarBotao).observe(D.documentElement, { childList: true, subtree: true });
 })();

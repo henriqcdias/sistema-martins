@@ -194,10 +194,12 @@
   for(const o of catalogos.obras){const b=D.createElement('button');b.type='button';b.className='block bg-white border rounded p-3 w-full text-left';b.textContent=o.nome;b.onclick=()=>{if(el('gestao-obra-select'))el('gestao-obra-select').value=o.id;try{W.renderGestaoObra?.(o.id);}catch{}D.querySelector('[data-view="gestao-obras"]')?.click();};sec.append(b);}painel.append(sec);
  }
  const handlers={'form-novo-colaborador':formularioFuncionario,'form-editar-colaborador':formularioFuncionario,'form-editar-ficha-colab-estab':formularioFuncionario,'form-nova-obra-sistema':formularioObra,'form-gestao-obra':formularioObra,'form-rdo':formularioRdo,'form-novo-orcamento-venda':formularioOrcamento};
+ // Depois do F5 a sessão volta sem a senha: em vez de falhar em silêncio, pede a senha e refaz a operação uma vez.
+ async function comDesbloqueio(acao){try{return await acao();}catch(error){if(error?.code!=='RASCUNHO_BLOQUEADO'||typeof W.solicitarDesbloqueioEdicaoWork!=='function')throw error;mensagem('Confirme sua senha para salvar.');if(!await W.solicitarDesbloqueioEdicaoWork())throw Error('Edição não desbloqueada: nada foi salvo. Confirme sua senha para salvar.');return await acao();}}
  async function submeter(form){
   if(form.dataset.enviandoProducao==='1')return;form.dataset.enviandoProducao='1';ocupado++;
   const buttons=[...form.querySelectorAll('button[type=submit]')];buttons.forEach(b=>b.disabled=true);const controls=[...form.querySelectorAll('input,select,textarea')].map(x=>[x,x.disabled]);controls.forEach(([x])=>x.disabled=true);mensagem('Aguardando confirmação do Supabase…');
-  try{await handlers[form.id](form);dirty=false;await carregar();mensagem('Salvamento confirmado e relido no Supabase.');if(form.id!=='form-rdo'){form.closest('[id^=modal-]')?.classList.add('hidden');delete form.dataset.registroProducao;delete form.dataset.revisaoProducao;}}
+  try{await comDesbloqueio(()=>handlers[form.id](form));dirty=false;await carregar();mensagem('Salvamento confirmado e relido no Supabase.');if(form.id!=='form-rdo'){form.closest('[id^=modal-]')?.classList.add('hidden');delete form.dataset.registroProducao;delete form.dataset.revisaoProducao;}}
   catch(error){mensagem((error.code==='40001'?'Outra sessão alterou este registro. Seu formulário foi preservado. Recarregue para comparar. ': '')+error.message,true);}
   finally{ocupado--;form.dataset.enviandoProducao='0';buttons.forEach(b=>b.disabled=false);controls.forEach(([x,disabled])=>x.disabled=disabled);}
  }
@@ -238,7 +240,7 @@
   W.salvarCadastroUnicoColaboradorSemDuplicidadeV170=event=>{event?.preventDefault?.();return submeter(el(event?.target?.id==='form-editar-colaborador'?'form-editar-colaborador':'form-novo-colaborador'));};
   W.salvarEdicaoColaboradorModal=()=>submeter(el('form-editar-colaborador'));
   W.salvarNovoOrcamentoVendaForm=event=>{event?.preventDefault();return submeter(el('form-novo-orcamento-venda'));};
-  W.salvarFrequenciaDiariaDoDia=()=>frequencia().catch(x=>mensagem(x.message,true));
+  W.salvarFrequenciaDiariaDoDia=()=>comDesbloqueio(frequencia).catch(x=>mensagem(x.message,true));
   W.salvarRdo=(status)=>{if(status&&status.toLowerCase()!=='rascunho'){mensagem('Aprovação e assinatura exigem contrato próprio. O RDO operacional é salvo como rascunho.',true);return;}return submeter(el('form-rdo'));};
   const oldEdit=W.abrirModalEditarColaborador;W.abrirModalEditarColaborador=id=>{oldEdit?.(id);const r=registro('funcionarios',id);if(!r)return;const f=el('form-editar-colaborador');f.dataset.registroProducao=id;f.dataset.revisaoProducao=r.revisao;for(const [field,key]of [['nome','nome'],['cpf','cpf'],['rg','rg'],['funcao','funcao'],['vinculo','vinculo'],['admissao','dataAdmissao'],['status','status'],['obra','obra_id'],['obs','obs']])if(el('edit-colab-'+field))el('edit-colab-'+field).value=r.dados[key]||'';};
   const oldFicha=W.abrirFichaColaborador;W.abrirFichaColaborador=id=>{

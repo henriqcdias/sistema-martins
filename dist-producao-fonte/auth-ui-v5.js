@@ -87,13 +87,15 @@
     unlock.textContent = 'Desbloquear edição';
     unlock.hidden = true;
     document.body.append(unlock);
-    unlock.onclick = () => {
+    // Abre a confirmação de senha e resolve true quando a edição foi desbloqueada.
+    const abrirDesbloqueio = () => new Promise(resolver => {
       const dialog = document.createElement('dialog');
       dialog.className = 'p-5 rounded';
-      dialog.innerHTML = '<form><label>Confirme sua senha <input type="password" autocomplete="current-password" required></label>' +
+      dialog.innerHTML = '<form><p><strong>Confirme sua senha para salvar.</strong><br>Por segurança, depois de atualizar a página a edição fica bloqueada até você confirmar a senha.</p><label>Senha <input type="password" autocomplete="current-password" required></label>' +
         '<button type="submit">Desbloquear</button> <button type="button">Cancelar</button><p role="status"></p></form>';
       document.body.append(dialog);
-      dialog.addEventListener('close', () => dialog.remove(), {once:true});
+      let desbloqueado = false;
+      dialog.addEventListener('close', () => { dialog.remove(); resolver(desbloqueado); }, {once:true});
       dialog.querySelector('button[type=button]').onclick = () => dialog.close();
       dialog.querySelector('form').onsubmit = async event => {
         event.preventDefault();
@@ -103,12 +105,15 @@
         try {
           await window.desbloquearRascunhosQaWork(field.value);
           unlock.hidden = true;
+          desbloqueado = true;
           dialog.close();
         } catch (_) { dialog.querySelector('[role=status]').textContent = 'Não foi possível desbloquear. Confira sua senha e sua sessão.'; }
         finally { field.value = ''; submit.disabled = false; }
       };
       dialog.showModal();
-    };
+    });
+    unlock.onclick = () => { abrirDesbloqueio(); };
+    window.solicitarDesbloqueioEdicaoWork = abrirDesbloqueio;
     document.getElementById('btn-logout-header')?.addEventListener('click', () => { unlock.hidden = true; document.getElementById('empresa-sessao-qa')?.remove(); });
     if (!retorno) {
       login.inert = true;

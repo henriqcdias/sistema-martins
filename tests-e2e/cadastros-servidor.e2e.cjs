@@ -48,7 +48,8 @@ async function supabase(db, route) {
     const corpo = JSON.parse(req.postData() || '{}');
     const id = url.searchParams.get('grant_type') === 'password' ? USUARIOS[corpo.email] : corpo.refresh_token;
     if (!id) return json(400, { error_code: 'invalid_credentials' });
-    return json(200, { user: { id, email: corpo.email }, access_token: id, refresh_token: id, expires_in: 3600 });
+    const email = Object.keys(USUARIOS).find(k => USUARIOS[k] === id);
+    return json(200, { user: { id, email }, access_token: id, refresh_token: id, expires_in: 3600 });
   }
   if (url.pathname === '/auth/v1/user') return json(200, { id: uid });
   if (url.pathname.startsWith('/auth/v1/logout')) return route.fulfill({ status: 204 });
@@ -73,7 +74,7 @@ function servir(dir, route) {
   return route.fulfill({ status: 200, contentType: tipo, body: fs.readFileSync(arquivo) });
 }
 
-async function entrar(browser, dir, db, email, viewport = { width: 1366, height: 820 }) {
+async function entrar(browser, dir, db, email, viewport = { width: 1366, height: 820 }, { rapido = false } = {}) {
   const ctx = await browser.newContext({ viewport, serviceWorkers: 'block' });
   const page = await ctx.newPage();
   page.erros = [];
@@ -82,7 +83,7 @@ async function entrar(browser, dir, db, email, viewport = { width: 1366, height:
   await page.route(QA + '/**', r => supabase(db, r));
   await page.goto(APP + '/', { waitUntil: 'networkidle' });
   // Espera a restauração de sessão do carregamento terminar, como acontece com um usuário real.
-  await page.waitForTimeout(1500);
+  if (!rapido) await page.waitForTimeout(1500);
   await page.fill('#gate-usuario-input', email);
   await page.fill('#gate-senha-input', 'senha-sintetica');
   await page.click('#btn-entrar-gate');
@@ -167,9 +168,30 @@ async function novo(page, campos) {
     check(pl.erros.length === 0, 'nenhuma exceção JavaScript na sessão do lançador' + (pl.erros.length ? ': ' + pl.erros.join(' | ') : ''));
 
     console.log('Persistência após recarregar');
-    const pm2 = await entrar(browser, dir, db, 'master@teste.invalid');
+    const pm2 = await entrar(browser, dir, db, 'master@teste.invalid', undefined, { rapido: true });
+    check(true, 'login logo após abrir a página não sofre "Sessão alterada" (rotina legada não derruba a sessão)');
     await aba(pm2, 'Despesas');
     check(await pm2.$eval('#cs-painel tbody', n => n.textContent.includes('sigilosos') && n.textContent.includes('Material de escritório')), 'nova sessão do Master vê as duas despesas (dados vêm do servidor)');
+
+    console.log('F5 e cadastro de funcionário pelo RH (módulo v1)');
+    await pm2.evaluate(() => window.MartinsCadastrosServidor.fechar());
+    await pm2.reload({ waitUntil: 'networkidle' });
+    await pm2.waitForFunction(() => document.body.dataset.sessaoProducao === 'ativa' && !!window.obterContextoSegurancaAutenticadoWork?.(), null, { timeout: 20000 });
+    await pm2.waitForTimeout(2500);
+    check(await pm2.evaluate(() => !!window.obterContextoSegurancaAutenticadoWork?.() && getComputedStyle(document.getElementById('tela-login-gate')).display === 'none'), 'depois do F5 a sessão continua ativa (não volta para o login)');
+    await pm2.evaluate(() => { document.getElementById('form-novo-colaborador').reset(); document.getElementById('modal-novo-colaborador').classList.remove('hidden'); });
+    await pm2.fill('#nc-nome', 'Fulano de Teste'); await pm2.fill('#nc-funcao', 'Pedreiro'); await pm2.fill('#nc-cpf', '529.982.247-25');
+    await pm2.click('#btn-salvar-colaborador');
+    await pm2.waitForSelector('dialog[open] input[type=password]', { timeout: 10000 });
+    check(true, 'salvar com edição bloqueada abre a confirmação de senha (não falha em silêncio)');
+    await pm2.fill('dialog[open] input[type=password]', 'senha-sintetica');
+    await pm2.click('dialog[open] button[type=submit]');
+    await pm2.waitForFunction(() => /Salvamento confirmado/.test(document.getElementById('producao-status')?.textContent || ''), null, { timeout: 15000 });
+    const func = (await db.query(`SELECT dados->>'nome' nome FROM martins_producao_v1.registros WHERE modulo='funcionarios'`)).rows;
+    check(func.length === 1 && func[0].nome === 'Fulano de Teste', 'após a senha, o funcionário é gravado no servidor e confirmado na tela');
+    check(await pm2.evaluate(() => window.getColaboradoresDb().some(c => c.nome === 'Fulano de Teste')), 'a lista de funcionários do sistema passa a trazer o novo funcionário');
+    check(await pm2.evaluate(() => [...document.querySelectorAll('#view-colaboradores table, #view-colaboradores [id*=quadro], #view-colaboradores tbody')].some(n => n.textContent.includes('Fulano de Teste'))), 'o nome aparece na tela de RH (tabela de funcionários)');
+    check(pm2.erros.length === 0, 'nenhuma exceção JavaScript no fluxo F5 + RH' + (pm2.erros.length ? ': ' + pm2.erros.join(' | ') : ''));
   } finally {
     await browser.close();
     fs.rmSync(tmp, { recursive: true, force: true });

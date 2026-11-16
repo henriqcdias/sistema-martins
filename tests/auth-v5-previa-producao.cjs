@@ -85,3 +85,20 @@ test('Falha de renderização após validação mantém login e restauração', 
  a.equal((await f.window.restaurarSessaoQaWork()).sucesso,true);
  a.ok(f.storage.has('martins.prod.auth.v1'));
 });
+
+test('Chamada legada sem senha não derruba a sessão v5 nem inicia login', async () => {
+ const f=setup();await f.window.autenticarUsuarioSistema('synthetic@example.invalid','synthetic-password');
+ const chamadas=f.calls.length;
+ for (const cred of [{login:'henrique'},{login:'synthetic@example.invalid'},{usuario:'qualquer'}]) {
+  const r=await f.window.autenticarUsuarioSupabaseAuth(cred);
+  a.equal(r.sucesso,true);a.equal(r.reutilizada,true);
+ }
+ a.equal(f.calls.length,chamadas);
+ a.ok(f.window.obterContextoSegurancaAutenticadoWork());
+});
+
+test('Sem sessão, chamada legada sem senha só informa credenciais ausentes', async () => {
+ const f=setup();
+ const r=await f.window.autenticarUsuarioSupabaseAuth({login:'henrique'});
+ a.equal(r.sucesso,false);a.equal(r.codigo,'CREDENCIAIS');a.equal(f.calls.length,0);
+});

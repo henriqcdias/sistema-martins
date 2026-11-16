@@ -387,7 +387,19 @@
 
 
   // Usa exclusivamente o transporte e a sessão da autenticação v5 acima.
-  window.autenticarUsuarioSupabaseAuth = credentials => window.autenticarUsuarioSupabaseWork(credentials.email || credentials.login || credentials.usuario, credentials.senha || credentials.password);
+  // Adaptador para chamadas legadas. Sem senha (ex.: inicializarIntegracaoDefinitivaSupabaseV16
+  // "autentica sessão padrão" na carga da página), NUNCA inicia login: iniciar login limpa a
+  // sessão v5 em curso, o que derrubava a sessão restaurada no F5 e causava "Sessão alterada".
+  window.autenticarUsuarioSupabaseAuth = credentials => {
+    const senha = credentials?.senha || credentials?.password;
+    if (!senha) {
+      const atual = window.obterContextoSegurancaAutenticadoWork();
+      return Promise.resolve(atual
+        ? { sucesso: true, usuario: atual, reutilizada: true }
+        : { sucesso: false, codigo: 'CREDENCIAIS', erro: 'Informe e-mail e senha do Supabase Auth.' });
+    }
+    return window.autenticarUsuarioSupabaseWork(credentials.email || credentials.login || credentials.usuario, senha);
+  };
   window.selecionarEmpresaFrequenciaWork = empresa => {
     if (!contexto?.empresas.includes(empresa)) falhar('Empresa não autorizada.','42501');
     window.empresaFrequenciaWork=empresa;sessionStorage.setItem('martins.prod.empresa',empresa);

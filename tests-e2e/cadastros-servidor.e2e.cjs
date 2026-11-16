@@ -1,0 +1,179 @@
+// Teste de ponta a ponta da tela "Cadastros e Despesas" num navegador real (Chromium).
+// O Supabase é simulado: cada chamada /auth e /rpc é atendida pelo SQL REAL (base + produção + v2)
+// rodando num Postgres descartável (PGlite). Nenhuma credencial ou banco real é usado.
+//
+// Uso (na raiz):
+//   npm install --no-save @electric-sql/pglite@0.2.17 playwright-core@1.56.1
+//   PLAYWRIGHT_BROWSERS_PATH=<pasta com chromium-1194> node tests-e2e/cadastros-servidor.e2e.cjs
+const { chromium } = require('playwright-core');
+const { PGlite } = require('@electric-sql/pglite');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const { spawnSync } = require('node:child_process');
+
+const raiz = path.resolve(__dirname, '..');
+const QA = 'https://oczxyiakpmgnrpoyhwov.supabase.co';
+const APP = 'http://localhost:4173';
+const E = '4d9b925e-732f-4055-8f52-c40373425dd5';
+const USUARIOS = { 'master@teste.invalid': '11111111-1111-4111-8111-111111111111', 'lancador@teste.invalid': '22222222-2222-4222-8222-222222222222' };
+let ok = 0, falhas = 0;
+const check = (c, m) => { c ? ok++ : falhas++; console.log(c ? '  ok   ' : '  FALHA', m); };
+
+async function banco() {
+  const db = new PGlite();
+  const sql = p => fs.readFileSync(path.join(raiz, p), 'utf8');
+  await db.exec(`CREATE ROLE anon NOLOGIN; CREATE ROLE authenticated NOLOGIN; CREATE ROLE service_role NOLOGIN;
+    CREATE SCHEMA auth; GRANT USAGE ON SCHEMA auth TO anon, authenticated; GRANT USAGE ON SCHEMA public TO anon, authenticated;
+    CREATE TABLE auth.users (id uuid PRIMARY KEY, email text);
+    CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$ SELECT nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;`);
+  await db.exec(sql('supabase/producao/base/estrutura_anterior_as_migracoes.sql'));
+  await db.exec(`INSERT INTO public.martins_empresas(id, razao_social) VALUES ('${E}', 'Construtora Martins - cadastro inicial');`);
+  for (const d of ['supabase/producao/migrations', 'supabase/v2/migrations'])
+    for (const f of fs.readdirSync(path.join(raiz, d)).sort()) await db.exec(sql(d + '/' + f));
+  const [M, L] = Object.values(USUARIOS);
+  await db.exec(`INSERT INTO auth.users VALUES ('${M}','master@teste.invalid'),('${L}','lancador@teste.invalid');
+    INSERT INTO public.martins_perfis(usuario_id, empresa_id, nome) VALUES ('${M}','${E}','Master Teste'),('${L}','${E}','Lançador Teste');
+    INSERT INTO public.martins_online_acessos(empresa_id, usuario_id, papel, ativo) VALUES ('${E}','${M}','master',true),('${E}','${L}','operacional',true);
+    INSERT INTO martins_producao_v1.permissoes(usuario_id, empresa_id, modulo, ler, criar, editar) VALUES ('${L}','${E}','despesas',true,true,true);`);
+  return db;
+}
+
+const TIPOS = { e: 'uuid', r: 'uuid', apos: 'uuid', op: 'uuid', v: 'bigint', limite: 'integer', d: 'jsonb', itens: 'jsonb', de: 'date', ate: 'date', m: 'text', estado: 'text', motivo: 'text' };
+async function supabase(db, route) {
+  const req = route.request(), url = new URL(req.url());
+  const json = (status, body) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
+  const uid = (req.headers().authorization || '').replace('Bearer ', '');
+  if (url.pathname === '/auth/v1/token') {
+    const corpo = JSON.parse(req.postData() || '{}');
+    const id = url.searchParams.get('grant_type') === 'password' ? USUARIOS[corpo.email] : corpo.refresh_token;
+    if (!id) return json(400, { error_code: 'invalid_credentials' });
+    return json(200, { user: { id, email: corpo.email }, access_token: id, refresh_token: id, expires_in: 3600 });
+  }
+  if (url.pathname === '/auth/v1/user') return json(200, { id: uid });
+  if (url.pathname.startsWith('/auth/v1/logout')) return route.fulfill({ status: 204 });
+  const m = url.pathname.match(/^\/rest\/v1\/rpc\/(martins_producao_[a-z_]+)$/);
+  if (!m) return json(404, { code: '404', message: 'rota não simulada' });
+  const args = JSON.parse(req.postData() || '{}');
+  const chaves = Object.keys(args).filter(k => args[k] !== null && args[k] !== undefined);
+  const valores = chaves.map(k => TIPOS[k] === 'jsonb' ? JSON.stringify(args[k]) : args[k]);
+  try {
+    await db.exec(`SET ROLE authenticated; SELECT set_config('request.jwt.claim.sub', '${uid.replace(/[^0-9a-f-]/g, '')}', false);`);
+    const r = await db.query(`SELECT public.${m[1]}(${chaves.map((k, i) => `${k} => $${i + 1}::${TIPOS[k]}`).join(', ')}) AS x`, valores);
+    return json(200, r.rows[0].x);
+  } catch (e) { return json(400, { code: e.code, message: e.message }); }
+  finally { await db.exec('RESET ROLE'); }
+}
+
+function servir(dir, route) {
+  const url = new URL(route.request().url());
+  const arquivo = path.join(dir, url.pathname === '/' ? 'index.html' : decodeURIComponent(url.pathname));
+  if (!arquivo.startsWith(dir) || !fs.existsSync(arquivo) || fs.statSync(arquivo).isDirectory()) return route.fulfill({ status: 200, contentType: 'text/html', body: fs.readFileSync(path.join(dir, 'index.html')) });
+  const tipo = { '.html': 'text/html', '.js': 'application/javascript', '.css': 'text/css', '.png': 'image/png', '.json': 'application/json' }[path.extname(arquivo)] || 'application/octet-stream';
+  return route.fulfill({ status: 200, contentType: tipo, body: fs.readFileSync(arquivo) });
+}
+
+async function entrar(browser, dir, db, email, viewport = { width: 1366, height: 820 }) {
+  const ctx = await browser.newContext({ viewport, serviceWorkers: 'block' });
+  const page = await ctx.newPage();
+  page.erros = [];
+  page.on('pageerror', e => page.erros.push(e.message));
+  await page.route(APP + '/**', r => servir(dir, r));
+  await page.route(QA + '/**', r => supabase(db, r));
+  await page.goto(APP + '/', { waitUntil: 'networkidle' });
+  // Espera a restauração de sessão do carregamento terminar, como acontece com um usuário real.
+  await page.waitForTimeout(1500);
+  await page.fill('#gate-usuario-input', email);
+  await page.fill('#gate-senha-input', 'senha-sintetica');
+  await page.click('#btn-entrar-gate');
+  await page.waitForSelector('#barra-producao [data-cs=abrir]', { state: 'attached', timeout: 20000 });
+  await page.waitForFunction(() => document.body.dataset.sessaoProducao === 'ativa', null, { timeout: 20000 });
+  await page.evaluate(() => window.MartinsCadastrosServidor.abrir());
+  await page.waitForSelector('#cs-painel .cs-aba');
+  return page;
+}
+async function aba(page, titulo) {
+  await page.click(`#cs-painel .cs-aba:text-is("${titulo}")`);
+  await page.waitForFunction(t => document.querySelector('[data-cs=status]')?.textContent.startsWith(t + ':'), titulo);
+}
+async function novo(page, campos) {
+  await page.click('#cs-painel button:text-is("+ Novo")');
+  for (const [id, valor] of Object.entries(campos)) {
+    const tag = await page.$eval('#cs-' + id, n => n.tagName + (n.type === 'checkbox' ? ':cb' : ''));
+    if (tag === 'SELECT') await page.selectOption('#cs-' + id, valor.startsWith('label:') ? { label: valor.slice(6) } : valor);
+    else if (tag.endsWith(':cb')) { if (valor) await page.check('#cs-' + id); }
+    else await page.fill('#cs-' + id, valor);
+  }
+  await page.click('#cs-painel button:text-is("Salvar no servidor")');
+}
+
+(async () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'martins-e2e-'));
+  fs.cpSync(path.join(raiz, 'scripts'), path.join(tmp, 'scripts'), { recursive: true });
+  fs.cpSync(path.join(raiz, 'dist-producao-fonte'), path.join(tmp, 'dist-producao-fonte'), { recursive: true });
+  const b = spawnSync(process.execPath, [path.join(tmp, 'scripts/preparar-build-qa.cjs')], { cwd: tmp, encoding: 'utf8',
+    env: { PATH: process.env.PATH, VITE_SUPABASE_QA_ANON_KEY: 'sb_publishable_CHAVE_SINTETICA_E2E', VITE_MARTINS_QA_GRAVACAO: 'HABILITADA' } });
+  if (b.status !== 0) throw Error('build QA falhou: ' + b.stderr);
+  const dir = path.join(tmp, 'dist-qa');
+  const db = await banco();
+  const browser = await chromium.launch();
+  try {
+    console.log('Master');
+    const pm = await entrar(browser, dir, db, 'master@teste.invalid');
+    check(await pm.$eval('[data-cs=empresa]', n => n.textContent.includes('Master') && !n.textContent.includes('somente leitura')), 'painel abre como Master, com gravação habilitada');
+    await aba(pm, 'Centros de custo');
+    await novo(pm, { codigo: 'ADM-01', nome: 'Administrativo Sede', tipo: 'administrativo' });
+    await pm.waitForSelector('#cs-painel td:text-is("ADM-01")');
+    check(true, 'cria centro de custo e ele aparece na lista (relido do servidor)');
+    await aba(pm, 'Fornecedores');
+    await novo(pm, { nome: 'Fornecedor Teste', documento: '11.222.333/0001-81' });
+    await pm.waitForSelector('#cs-painel td:text-is("11222333000181")');
+    check(true, 'cria fornecedor com CNPJ normalizado pelo servidor');
+    await novo(pm, { nome: 'Duplicado', documento: '11222333000181' });
+    await pm.waitForFunction(() => /Já existe um cadastro/.test(document.querySelector('.cs-erro')?.textContent || ''));
+    check(true, 'CNPJ duplicado mostra mensagem clara e não grava');
+    await pm.click('#cs-painel button:text-is("Cancelar")');
+
+    await aba(pm, 'Despesas');
+    await novo(pm, { descricao: 'Honorários sigilosos', valor_centavos: '1.500,00', competencia: '2026-11-10', classificacao: 'administrativa',
+      centro_custo_id: 'label:ADM-01 · Administrativo Sede', fornecedor_id: 'label:Fornecedor Teste', confidencial: true });
+    await pm.waitForSelector('#cs-painel .cs-confidencial');
+    check(await pm.$eval('#cs-painel tbody', n => n.textContent.includes('R$') && n.textContent.includes('1.500,00')), 'despesa confidencial criada e exibida com valor em reais');
+    const linha = (await db.query(`SELECT dados FROM martins_producao_v1.registros WHERE modulo='despesas'`)).rows[0].dados;
+    check(linha.confidencial === true && linha.estado === 'pendente_conferencia' && linha.valor_centavos === 150000, 'no banco: confidencial, pendente de conferência, 150000 centavos');
+    await pm.fill('#cs-painel .cs-estado input', 'Conferido com contrato');
+    await pm.click('#cs-painel .cs-estado button:text-is("Aprovar")');
+    await pm.waitForSelector('#cs-painel .cs-aprovado');
+    check(true, 'Master aprova pela tela e o selo muda para Aprovado');
+    await pm.click('#cs-painel button:text-is("Calcular")');
+    await pm.waitForFunction(() => /Total do período: R\$\s?1\.500,00/.test(document.querySelector('.cs-totais-saida')?.textContent || ''));
+    check(true, 'totais do período mostram a despesa no centro de custo para o Master');
+    check(pm.erros.length === 0, 'nenhuma exceção JavaScript na sessão do Master' + (pm.erros.length ? ': ' + pm.erros.join(' | ') : ''));
+
+    console.log('Lançador Financeiro (celular)');
+    const pl = await entrar(browser, dir, db, 'lancador@teste.invalid', { width: 390, height: 844 });
+    const abas = await pl.$$eval('#cs-painel .cs-aba', ns => ns.map(n => n.textContent));
+    check(abas.length === 1 && abas[0] === 'Despesas', 'lançador vê só a aba Despesas (permissão do servidor)');
+    await aba(pl, 'Despesas');
+    check(await pl.$eval('#cs-painel tbody', n => !n.textContent.includes('sigilosos') && !n.textContent.includes('1.500')), 'lançador NÃO vê a despesa confidencial');
+    await pl.click('#cs-painel button:text-is("+ Novo")');
+    check(await pl.$('#cs-confidencial') === null, 'formulário do lançador não oferece a opção confidencial');
+    check((await pl.$$eval('#cs-centro_custo_id option', os => os.map(o => o.textContent))).includes('ADM-01 · Administrativo Sede'), 'centro de custo é escolhido de lista');
+    await pl.click('#cs-painel button:text-is("Cancelar")');
+    await novo(pl, { descricao: 'Material de escritório', valor_centavos: '89,90', competencia: '2026-11-12', classificacao: 'administrativa', centro_custo_id: 'label:ADM-01 · Administrativo Sede' });
+    await pl.waitForFunction(() => /Material de escritório/.test(document.querySelector('#cs-painel tbody')?.textContent || ''));
+    check(await pl.$eval('#cs-painel tbody', n => n.textContent.includes('Pendente de conferência') && !n.textContent.includes('Aprovar')), 'despesa do lançador fica pendente e ele não tem botão de aprovar');
+    check(await pl.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), 'sem rolagem horizontal no celular (390 px)');
+    check(pl.erros.length === 0, 'nenhuma exceção JavaScript na sessão do lançador' + (pl.erros.length ? ': ' + pl.erros.join(' | ') : ''));
+
+    console.log('Persistência após recarregar');
+    const pm2 = await entrar(browser, dir, db, 'master@teste.invalid');
+    await aba(pm2, 'Despesas');
+    check(await pm2.$eval('#cs-painel tbody', n => n.textContent.includes('sigilosos') && n.textContent.includes('Material de escritório')), 'nova sessão do Master vê as duas despesas (dados vêm do servidor)');
+  } finally {
+    await browser.close();
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+  console.log(`\n${ok} ok, ${falhas} falha(s)`);
+  process.exit(falhas ? 1 : 0);
+})().catch(e => { console.error('ERRO:', e.message); process.exit(2); });

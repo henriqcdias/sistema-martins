@@ -64,7 +64,7 @@ BEGIN
   IF ref IS NULL AND NULLIF(trim(d->>'nome'),'') IS NULL THEN RAISE EXCEPTION 'Informe o funcionário vinculado ou o nome' USING ERRCODE='22023'; END IF;
   d := CASE WHEN ref IS NULL THEN d - 'funcionario_id' ELSE jsonb_set(d,'{funcionario_id}',to_jsonb(ref::text)) END;
   IF m='motoristas' THEN
-   IF d ? 'cnh_categoria' AND COALESCE(d->>'cnh_categoria','') NOT IN ('A','B','C','D','E','AB','AC','AD','AE') THEN RAISE EXCEPTION 'Categoria de CNH inválida' USING ERRCODE='22023'; END IF;
+   IF NULLIF(d->>'cnh_categoria','') IS NOT NULL AND d->>'cnh_categoria' NOT IN ('A','B','C','D','E','AB','AC','AD','AE') THEN RAISE EXCEPTION 'Categoria de CNH inválida' USING ERRCODE='22023'; END IF;
    IF NULLIF(d->>'cnh_validade','') IS NOT NULL THEN d := jsonb_set(d,'{cnh_validade}',to_jsonb(((d->>'cnh_validade')::date)::text)); END IF;
   END IF;
 

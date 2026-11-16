@@ -10,7 +10,7 @@ const raiz = path.join(__dirname, '..');
 const ARQUIVOS = [
   'dist-producao-fonte/index.html', 'dist-producao-fonte/dist/app-martins.min.js',
   'dist-producao-fonte/auth-v5.js', 'dist-producao-fonte/auth-ui-v5.js',
-  'dist-producao-fonte/formularios.js', 'dist-producao-fonte/cliente.js',
+  'dist-producao-fonte/formularios.js', 'dist-producao-fonte/cliente.js', 'dist-producao-fonte/cadastros-servidor.js',
   'dist/index.html', 'dist/dist/app-martins.min.js',
 ];
 const PROVEDORES_PESSOAIS = /@(?:gmail|googlemail|hotmail|outlook|live|yahoo|icloud|uol|bol|terra|ig)\.[a-z.]+\b/i;
@@ -33,4 +33,9 @@ test('Código publicado não define senhas padrão nem grava senha local', () =>
     a.equal(/senha\s*:\s*[^,\n]*\|\|\s*['"][^'"]{4,}['"]/.test(texto), false, arquivo + ' define senha padrão');
     a.equal(/\balvo\.senha\s*=/.test(texto), false, arquivo + ' grava senha no cadastro local');
   }
+});
+
+test('Tela de cadastros não insere HTML vindo do servidor (sem innerHTML/insertAdjacentHTML)', () => {
+  const t = fs.readFileSync(path.join(raiz, 'dist-producao-fonte/cadastros-servidor.js'), 'utf8');
+  a.equal(/innerHTML|outerHTML|insertAdjacentHTML|document\.write/.test(t), false);
 });

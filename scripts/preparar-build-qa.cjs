@@ -42,11 +42,13 @@ try {
     'window.MARTINS_SUPABASE_ENV_CONFIG = Object.freeze(' + JSON.stringify({
       VITE_MARTINS_ENV:'PRODUCAO', // contrato de compatibilidade da v5; nao significa projeto produtivo
       VITE_SUPABASE_PROD_URL: QA_URL,
-      VITE_SUPABASE_PROD_ANON_KEY: key
+      VITE_SUPABASE_PROD_ANON_KEY: key,
+      // Opt-in explícito no terminal: VITE_MARTINS_QA_GRAVACAO=HABILITADA. Sem ele, o QA segue somente leitura.
+      ...(process.env.VITE_MARTINS_QA_GRAVACAO === 'HABILITADA' ? { VITE_MARTINS_GRAVACAO: 'HABILITADA' } : {})
     }) + ');\n', {flag:'wx'});
   const swTemplate = fs.readFileSync(path.join(__dirname, 'sw-producao.js'), 'utf8');
   const hash = crypto.createHash('sha256');
-  for (const f of ['index.html','dist/app-martins.min.js','producao-config.js','auth-v5.js','auth-ui-v5.js','cliente.js','formularios.js']) {
+  for (const f of ['index.html','dist/app-martins.min.js','producao-config.js','auth-v5.js','auth-ui-v5.js','cliente.js','formularios.js', 'cadastros-servidor.js']) {
     hash.update(f); hash.update(fs.readFileSync(path.join(tmp,f)));
   }
   fs.writeFileSync(path.join(tmp,'sw.js'), swTemplate.replace('__REVISAO__', hash.digest('hex').slice(0,16)).replace('martins-erp-prod-', 'martins-erp-qa-'));

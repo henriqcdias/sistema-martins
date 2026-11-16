@@ -35,6 +35,12 @@ try {
     }
   }
 
+  // A produção só libera gravação com autorização formal; o build nunca a habilita.
+  for (const arquivo of arquivos(artefato)) {
+    if (/\.(?:html?|[cm]?js|json)$/.test(arquivo) && /VITE_MARTINS_GRAVACAO/.test(fs.readFileSync(arquivo, 'utf8')) && !/auth-v5\.js$/.test(arquivo)) {
+      problemas.push(path.relative(artefato, arquivo) + ' (gravação habilitada)');
+    }
+  }
   if (problemas.length) throw new Error('Configuração incompatível no artefato: ' + problemas.join(', '));
   if (!temProjetoProducao) throw new Error('URL de produção ausente no artefato.');
   console.log('Verificação estática de ambiente aprovada.');

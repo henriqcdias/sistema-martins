@@ -59,6 +59,11 @@
     return locks.request(chaveLocal(ativa, empresa, data), executar);
   }
 
+  function gravacaoHabilitadaWork() {
+    return (window.MARTINS_SUPABASE_ENV_CONFIG || {}).VITE_MARTINS_GRAVACAO === 'HABILITADA';
+  }
+  window.gravacaoHabilitadaWork = gravacaoHabilitadaWork;
+
   function configuracaoWork() {
     const env = window.MARTINS_SUPABASE_ENV_CONFIG || {};
     const cfg = {ambienteAtivo:env.VITE_MARTINS_ENV,supabaseUrl:env.VITE_SUPABASE_PROD_URL,credenciaisValidas:env.VITE_MARTINS_ENV==='PRODUCAO'};
@@ -82,14 +87,21 @@
     const leitura = schema === 'public' && method === 'POST' && [
       '/rest/v1/rpc/martins_producao_contexto',
       '/rest/v1/rpc/martins_producao_catalogos',
-      '/rest/v1/rpc/martins_producao_consultar'
+      '/rest/v1/rpc/martins_producao_consultar',
+      '/rest/v1/rpc/martins_producao_despesas_totais'
+    ].includes(path);
+    // Gravação só quando o build a habilita explicitamente (homologação); a produção permanece somente leitura.
+    const escrita = gravacaoHabilitadaWork() && schema === 'public' && method === 'POST' && [
+      '/rest/v1/rpc/martins_producao_salvar',
+      '/rest/v1/rpc/martins_producao_salvar_lote',
+      '/rest/v1/rpc/martins_producao_despesa_estado'
     ].includes(path);
     const sessaoPermitida = (method === 'POST' && [
       '/auth/v1/token?grant_type=password',
       '/auth/v1/token?grant_type=refresh_token',
       '/auth/v1/logout?scope=local'
     ].includes(path)) || (method === 'GET' && path === '/auth/v1/user');
-    if (!leitura && !sessaoPermitida) falhar('Operação indisponível na prévia somente leitura.', 'PREVIA_SOMENTE_LEITURA');
+    if (!leitura && !escrita && !sessaoPermitida) falhar('Operação indisponível na prévia somente leitura.', 'PREVIA_SOMENTE_LEITURA');
     const headers = { apikey: config.key, Accept: 'application/json' };
     if (token) headers.Authorization = 'Bearer ' + token;
     if (path.startsWith('/rest/')) {
@@ -398,6 +410,8 @@
     salvar:args=>rpcProducao('martins_producao_salvar',args),
     catalogos:e=>rpcProducao('martins_producao_catalogos',{e}),
     lote:args=>rpcProducao('martins_producao_salvar_lote',args),
+    despesaEstado:args=>rpcProducao('martins_producao_despesa_estado',args),
+    despesasTotais:args=>rpcProducao('martins_producao_despesas_totais',args),
     comRascunho:async(e,executar)=>{
       const ativa=sessao;
       if(!ativa||!contexto?.empresas.includes(e))falhar('Sessão ou empresa inválida.','42501');

@@ -16,7 +16,7 @@
     const vinculo = ctx.vinculos.find(v => v.empresa_id === empresaId);
     barra.replaceChildren();
     const titulo = D.createElement('strong');
-    titulo.textContent = 'Contexto empresarial · prévia somente leitura';
+    titulo.textContent = 'Contexto empresarial · ' + (W.gravacaoHabilitadaWork?.() ? 'homologação com gravação' : 'prévia somente leitura');
     barra.append(titulo);
     const info = D.createElement('span');
     info.className = 'ml-3';

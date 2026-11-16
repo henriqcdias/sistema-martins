@@ -65,6 +65,13 @@ const check = (c, m) => { c ? ok++ : falhas++; console.log(c ? '  ok   ' : '  FA
   const mot = id();
   check((await salvar(MASTER, 'motoristas', mot, 0, { funcionario_id: func, cnh_categoria: 'D', cnh_validade: '2028-05-01' })).revisao === 1, 'motorista vinculado ao funcionário (sem duplicar a pessoa)');
   check((await salvar(MASTER, 'motoristas', id(), 0, { funcionario_id: func })).erro === '23505', 'segundo motorista para o mesmo funcionário é recusado');
+  check((await salvar(MASTER, 'motoristas', id(), 0, { nome: 'Externo', cnh_categoria: null, cnh_validade: null })).revisao === 1, 'campos opcionais vazios (null) são aceitos');
+  check((await salvar(MASTER, 'motoristas', id(), 0, { nome: 'Externo 2', cnh_categoria: 'Z' })).erro === '22023', 'categoria de CNH inválida é recusada');
+  const cli = id();
+  await salvar(MASTER, 'clientes', cli, 0, { nome: 'Cliente Limpa', documento: '529.982.247-25', telefone: '1' });
+  await salvar(MASTER, 'clientes', cli, 1, { nome: 'Cliente Limpa', documento: null, telefone: null });
+  const cliLido = (await consultar(MASTER, 'clientes', cli))[0];
+  check(cliLido.dados.documento === undefined && cliLido.dados.telefone === null, 'edição com campo vazio limpa o valor anterior');
   check((await salvar(MASTER, 'vendedores', id(), 0, { funcionario_id: func })).revisao === 1, 'a mesma pessoa pode ser vendedor (vínculo diferente)');
   check((await salvar(MASTER, 'vendedores', id(), 0, { nome: 'V', perfil: 'Master' })).erro === '22023', 'cadastro de vendedor não concede permissão');
   check((await salvar(MASTER, 'motoristas', id(), 0, { funcionario_id: id() })).erro === '23503', 'motorista com funcionário de fora é recusado');

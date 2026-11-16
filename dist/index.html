@@ -95,6 +95,7 @@
       body #empresa-sessao-qa { max-width: 100%; }
       body #empresa-sessao-qa select { min-height: 36px; }
     }
+      #toast { z-index: 2147483000 !important; }
   </style>
 </head>
 <body class="bg-slate-100 text-slate-800 min-h-screen flex flex-col antialiased overflow-x-hidden w-full max-w-full">
@@ -10901,16 +10902,32 @@
       showToast("Modelo CSV baixado!");
     }
 
-    function showToast(msg) {
+    // Toast acima de qualquer modal/desfoque; erros e avisos ficam destacados e por mais tempo.
+    let temporizadorToast = null;
+    function showToast(msg, tipo) {
       const toast = document.getElementById("toast");
       const toastMsg = document.getElementById("toast-msg");
       if (!toast || !toastMsg) return;
 
+      const problema = tipo === "error" || tipo === "warning";
       toastMsg.textContent = msg;
+      toast.style.zIndex = "2147483000";
+      toast.setAttribute("role", problema ? "alert" : "status");
+      toast.setAttribute("aria-live", problema ? "assertive" : "polite");
+      toast.style.borderColor = tipo === "error" ? "#ef4444" : tipo === "warning" ? "#f59e0b" : "";
+      toast.style.borderWidth = problema ? "2px" : "";
+      toast.style.maxWidth = "min(92vw, 28rem)";
+      const icone = toast.querySelector("svg");
+      if (icone) {
+        // ✓ só para sucesso; erro/aviso usam ! em vermelho/âmbar.
+        icone.setAttribute("class", "w-4 h-4 shrink-0 " + (tipo === "error" ? "text-red-400" : tipo === "warning" ? "text-amber-400" : "text-emerald-400"));
+        icone.querySelector("path")?.setAttribute("d", problema ? "M12 8v5m0 3h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z" : "M5 13l4 4L19 7");
+      }
       toast.classList.remove("translate-y-20", "opacity-0");
-      setTimeout(() => {
+      clearTimeout(temporizadorToast);
+      temporizadorToast = setTimeout(() => {
         toast.classList.add("translate-y-20", "opacity-0");
-      }, 3000);
+      }, problema ? 7000 : 3000);
     }
   
 

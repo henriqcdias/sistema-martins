@@ -150,7 +150,7 @@
    estado.pendentes??={};let cmd=estado.pendentes[modulo];
    if(cmd){if(JSON.stringify(cmd.dados)!==JSON.stringify(d)||cmd.id!==(id||cmd.id))throw Error('Há uma operação pendente deste módulo. Use Reenviar pendentes antes de alterar os dados.');api.restore(cmd);}
    else{cmd=api.prepare({empresa:e,modulo,id:id||crypto.randomUUID(),revisao:rev??antigo?.revisao??0,dados:d});estado.pendentes[modulo]=cmd;await persistir();}
-   const result=await api.send(cmd.operacao);delete estado.pendentes[modulo];await persistir();
+   let result;try{result=await api.send(cmd.operacao);}catch(error){if(recusaDefinitiva(error)){delete estado.pendentes[modulo];await persistir();}throw error;}delete estado.pendentes[modulo];await persistir();
    dados[modulo].set(result.registro.id,result.registro);return result.registro;
   });
  }
@@ -194,6 +194,9 @@
   for(const o of catalogos.obras){const b=D.createElement('button');b.type='button';b.className='block bg-white border rounded p-3 w-full text-left';b.textContent=o.nome;b.onclick=()=>{if(el('gestao-obra-select'))el('gestao-obra-select').value=o.id;try{W.renderGestaoObra?.(o.id);}catch{}D.querySelector('[data-view="gestao-obras"]')?.click();};sec.append(b);}painel.append(sec);
  }
  const handlers={'form-novo-colaborador':formularioFuncionario,'form-editar-colaborador':formularioFuncionario,'form-editar-ficha-colab-estab':formularioFuncionario,'form-nova-obra-sistema':formularioObra,'form-gestao-obra':formularioObra,'form-rdo':formularioRdo,'form-novo-orcamento-venda':formularioOrcamento};
+ // Recusa definitiva do servidor (dado inválido, duplicado, referência, permissão, conflito): reenviar a mesma
+ // operação daria o mesmo erro, então ela não fica pendente. Falhas de rede/limite continuam pendentes para reenvio.
+ function recusaDefinitiva(error){const c=String(error?.code||'');return /^(22|23)[0-9A-Z]{3}$/.test(c)||['42501','40001','PGRST202','PGRST106'].includes(c);}
  // Depois do F5 a sessão volta sem a senha: em vez de falhar em silêncio, pede a senha e refaz a operação uma vez.
  async function comDesbloqueio(acao){try{return await acao();}catch(error){if(error?.code!=='RASCUNHO_BLOQUEADO'||typeof W.solicitarDesbloqueioEdicaoWork!=='function')throw error;mensagem('Confirme sua senha para salvar.');if(!await W.solicitarDesbloqueioEdicaoWork())throw Error('Edição não desbloqueada: nada foi salvo. Confirme sua senha para salvar.');return await acao();}}
  async function submeter(form){
@@ -215,7 +218,7 @@
    const anterior=listar('frequencia').find(x=>x.funcionario_id===pessoa&&x.data===data&&(x.obra_id||null)===obra);
    const d={funcionario_id:pessoa,obra_id:obra,data,situacao,horas_normais:situacao==='presente'?num(row.querySelector('.freq-inp-horas')?.value||8):0,horas_extras:situacao==='presente'?num(row.querySelector('.freq-inp-he50')?.value)+num(row.querySelector('.freq-inp-he100')?.value):0,obs:row.querySelector('.inp-obs-ponto,.freq-inp-obs')?.value||''};
    return {r:anterior?.id||crypto.randomUUID(),v:anterior?.revisao||0,d,op:crypto.randomUUID()};});
-  ocupado++;try{await W.MartinsProducaoRpc.comRascunho(e,async(estado,persistir)=>{estado.pendentes??={};if(estado.pendentes.frequencia)throw Error('Há frequência pendente. Use Reenviar pendentes.');estado.pendentes.frequencia={lote:true,e,m:'frequencia',itens};await persistir();const result=await W.MartinsProducaoRpc.lote({e,m:'frequencia',itens});await confirmarLote(e,'frequencia',itens,result);delete estado.pendentes.frequencia;await persistir();});rows.forEach(r=>delete r.dataset.dirty);dirty=false;await carregar();mensagem('Frequência confirmada pelo servidor.');}finally{ocupado--;}
+  ocupado++;try{await W.MartinsProducaoRpc.comRascunho(e,async(estado,persistir)=>{estado.pendentes??={};if(estado.pendentes.frequencia)throw Error('Há frequência pendente. Use Reenviar pendentes.');estado.pendentes.frequencia={lote:true,e,m:'frequencia',itens};await persistir();let result;try{result=await W.MartinsProducaoRpc.lote({e,m:'frequencia',itens});}catch(error){if(recusaDefinitiva(error)){delete estado.pendentes.frequencia;await persistir();}throw error;}await confirmarLote(e,'frequencia',itens,result);delete estado.pendentes.frequencia;await persistir();});rows.forEach(r=>delete r.dataset.dirty);dirty=false;await carregar();mensagem('Frequência confirmada pelo servidor.');}finally{ocupado--;}
  }
  function inicializar(){
   instalarLeituras();D.body.dataset.sessaoProducao='inativa';

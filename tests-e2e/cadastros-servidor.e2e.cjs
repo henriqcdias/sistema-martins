@@ -173,6 +173,22 @@ async function novo(page, campos) {
     await aba(pm2, 'Despesas');
     check(await pm2.$eval('#cs-painel tbody', n => n.textContent.includes('sigilosos') && n.textContent.includes('Material de escritório')), 'nova sessão do Master vê as duas despesas (dados vêm do servidor)');
 
+    console.log('Toast de erro sobre o modal');
+    await pm2.evaluate(() => window.MartinsCadastrosServidor.fechar());
+    await pm2.evaluate(() => { document.getElementById('form-novo-colaborador').reset(); document.getElementById('modal-novo-colaborador').classList.remove('hidden'); });
+    await pm2.fill('#nc-nome', 'CPF Errado'); await pm2.fill('#nc-funcao', 'Servente'); await pm2.fill('#nc-cpf', '123');
+    await pm2.click('#btn-salvar-colaborador');
+    await pm2.waitForFunction(() => /CPF inválido/.test(document.getElementById('toast-msg')?.textContent || '') && getComputedStyle(document.getElementById('toast')).opacity === '1', null, { timeout: 8000 });
+    const topo = await pm2.evaluate(() => { const t = document.getElementById('toast').getBoundingClientRect(); const n = document.elementFromPoint(t.left + t.width / 2, t.top + t.height / 2); return !!n?.closest('#toast'); });
+    if (process.env.E2E_PRINTS) await pm2.screenshot({ path: path.join(process.env.E2E_PRINTS, 'toast-sobre-modal.png') });
+    check(topo, 'com o modal aberto, o toast de erro fica na frente do desfoque (legível)');
+    check(await pm2.$eval('#toast', n => n.getAttribute('role') === 'alert' && n.style.borderColor !== ''), 'toast de erro é anunciado (role=alert) e destacado');
+    await pm2.fill('#nc-cpf', '111.444.777-35');
+    await pm2.click('#btn-salvar-colaborador');
+    await pm2.waitForFunction(() => /Salvamento confirmado/.test(document.getElementById('producao-status')?.textContent || ''), null, { timeout: 15000 });
+    check((await db.query(`SELECT 1 FROM martins_producao_v1.registros WHERE modulo='funcionarios' AND dados->>'nome'='CPF Errado'`)).rows.length === 1,
+      'depois de um erro do servidor, corrigir e salvar funciona (a operação recusada não fica travando o módulo)');
+
     console.log('F5 e cadastro de funcionário pelo RH (módulo v1)');
     await pm2.evaluate(() => window.MartinsCadastrosServidor.fechar());
     await pm2.reload({ waitUntil: 'networkidle' });
@@ -187,8 +203,8 @@ async function novo(page, campos) {
     await pm2.fill('dialog[open] input[type=password]', 'senha-sintetica');
     await pm2.click('dialog[open] button[type=submit]');
     await pm2.waitForFunction(() => /Salvamento confirmado/.test(document.getElementById('producao-status')?.textContent || ''), null, { timeout: 15000 });
-    const func = (await db.query(`SELECT dados->>'nome' nome FROM martins_producao_v1.registros WHERE modulo='funcionarios'`)).rows;
-    check(func.length === 1 && func[0].nome === 'Fulano de Teste', 'após a senha, o funcionário é gravado no servidor e confirmado na tela');
+    const func = (await db.query(`SELECT dados->>'nome' nome FROM martins_producao_v1.registros WHERE modulo='funcionarios' AND dados->>'nome'='Fulano de Teste'`)).rows;
+    check(func.length === 1, 'após a senha, o funcionário é gravado no servidor e confirmado na tela');
     check(await pm2.evaluate(() => window.getColaboradoresDb().some(c => c.nome === 'Fulano de Teste')), 'a lista de funcionários do sistema passa a trazer o novo funcionário');
     check(await pm2.evaluate(() => [...document.querySelectorAll('#view-colaboradores table, #view-colaboradores [id*=quadro], #view-colaboradores tbody')].some(n => n.textContent.includes('Fulano de Teste'))), 'o nome aparece na tela de RH (tabela de funcionários)');
     check(pm2.erros.length === 0, 'nenhuma exceção JavaScript no fluxo F5 + RH' + (pm2.erros.length ? ': ' + pm2.erros.join(' | ') : ''));

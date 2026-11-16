@@ -52,6 +52,18 @@
       ['conta_bancaria_id', 'Conta bancária', 'ref', { catalogo: 'contas_bancarias', vazio: 'Não informada' }],
       ['documento_numero', 'Nº do documento', 'texto'], ['observacao', 'Observação', 'area'],
       ['confidencial', 'Despesa confidencial — visível somente aos Masters', 'sim', { somenteMaster: true }]] },
+    feriados: { titulo: 'Feriados', colunas: ['data', 'nome', 'abrangencia'], campos: [
+      ['data', 'Data', 'data', { obrigatorio: true }], ['nome', 'Descrição', 'texto', { obrigatorio: true }],
+      ['abrangencia', 'Abrangência', 'opcoes', { opcoes: [['municipal', 'Municipal'], ['estadual', 'Estadual'], ['nacional', 'Nacional'], ['empresa', 'Recesso da empresa']] }]] },
+    precos_insumo: { titulo: 'Preços de insumos', colunas: ['data', 'nome', 'unidade', 'preco_centavos'], campos: [
+      ['nome', 'Produto / insumo', 'texto', { obrigatorio: true }], ['categoria', 'Categoria', 'texto'], ['unidade', 'Unidade', 'texto', { obrigatorio: true }],
+      ['preco_centavos', 'Preço unitário pago (R$)', 'dinheiro', { obrigatorio: true }], ['data', 'Data da compra', 'data'],
+      ['fornecedor_id', 'Fornecedor', 'ref', { catalogo: 'fornecedores', vazio: 'Não informado' }],
+      ['centro_custo_id', 'Centro de custo', 'ref', { catalogo: 'centros_custo', vazio: 'Não informado' }],
+      ['rendimento', 'Rendimento / custo por metro', 'texto'], ['observacao', 'Observação', 'area']] },
+    epis: { titulo: 'EPIs e uniformes', colunas: ['codigo', 'nome', 'tamanho', 'estoque_minimo'], campos: [
+      ['nome', 'Descrição', 'texto', { obrigatorio: true }], ['codigo', 'Código de referência', 'texto'], ['categoria', 'Categoria', 'texto'],
+      ['tamanho', 'Tamanho / numeração', 'texto'], ['preco_centavos', 'Preço unitário de custo (R$)', 'dinheiro'], ['estoque_minimo', 'Estoque mínimo para alerta', 'numero']] },
   };
   const ORDEM = Object.keys(MODULOS);
   const ESTADOS = { pendente_conferencia: 'Pendente de conferência', aprovado: 'Aprovado', pago: 'Pago', confirmado: 'Confirmado', conciliado: 'Conciliado', cancelado: 'Cancelado' };
@@ -192,9 +204,9 @@
     }
     return d;
   }
-  function abrirFormulario(reg) {
+  function abrirFormulario(reg, inicial = null) {
     const def = MODULOS[aba];
-    const dados = reg?.dados || {};
+    const dados = reg?.dados || inicial || {};
     const campos = def.campos.filter(c => !(c[3]?.somenteMaster && !master()));
     const form = el('form', { classe: 'cs-form', novalidate: true });
     form.append(el('h3', { texto: (reg ? 'Editar · ' : 'Novo · ') + def.titulo }));
@@ -235,7 +247,9 @@
     if (coluna === 'funcionario_id') return rotuloRef('funcionarios', v) || 'Externo';
     if (coluna === 'centro_custo_id') return rotuloRef('centros_custo', v) || (v ? 'Inativo' : '');
     if (coluna === 'obra_id') return rotuloRef('obras', v);
-    if (coluna === 'cnh_validade' || coluna === 'competencia') return v ? v.split('-').reverse().join('/') : '';
+    if (coluna === 'cnh_validade' || coluna === 'competencia' || coluna === 'data') return v ? String(v).split('-').reverse().join('/') : '';
+    if (coluna === 'preco_centavos') return v === undefined || v === null ? '' : reais(v);
+    if (coluna === 'abrangencia') return { municipal: 'Municipal', estadual: 'Estadual', nacional: 'Nacional', empresa: 'Recesso da empresa' }[v] || v || '';
     if (coluna === 'nome' && !v && d.funcionario_id) return rotuloRef('funcionarios', d.funcionario_id);
     return v ?? '';
   }
@@ -310,10 +324,16 @@
       onclick: () => { aba = m; desenharAbas(); carregarAba().catch(e => mensagem(traduzir(e), true)); } })));
     if (!visiveis.length) { painel.querySelector('[data-cs=corpo]').replaceChildren(el('p', { classe: 'cs-vazio', texto: 'Seu vínculo não tem permissão de leitura em nenhum cadastro desta empresa. Peça a liberação ao Master.' })); }
   }
-  async function abrir(inicial) {
+  async function abrir(inicial, preenchimento = null) {
     if (!painel) montar();
     painel.hidden = false; D.body.classList.add('cs-aberto');
-    try { await sincronizarSessao(); painel.querySelector('[data-cs=empresa]').textContent = (vinculo()?.nomeEmpresa || '') + (master() ? ' · Master' : '') + (gravacao() ? '' : ' · somente leitura'); if (MODULOS[inicial] && pode(inicial, 'ler')) aba = inicial; desenharAbas(); if (aba) await carregarAba(); }
+    try { await sincronizarSessao(); painel.querySelector('[data-cs=empresa]').textContent = (vinculo()?.nomeEmpresa || '') + (master() ? ' · Master' : '') + (gravacao() ? '' : ' · somente leitura'); if (MODULOS[inicial] && pode(inicial, 'ler')) aba = inicial; desenharAbas(); if (aba) await carregarAba();
+      if (preenchimento && aba !== inicial) { mensagem('O cadastro de ' + (MODULOS[inicial]?.titulo || inicial).toLowerCase() + ' ainda não está liberado para o seu vínculo nesta empresa (ou o módulo não foi habilitado no servidor). Nada foi gravado no navegador.', true); return; }
+      if (preenchimento && aba === inicial) {
+        if (!pode(aba, 'criar')) { mensagem('Seu vínculo não tem permissão para cadastrar ' + MODULOS[aba].titulo.toLowerCase() + '. Peça a liberação ao Master.', true); return; }
+        abrirFormulario(null, preenchimento);
+        mensagem('Este cadastro agora é gravado no servidor e compartilhado com a equipe. Confira os dados trazidos do formulário e clique em Salvar.');
+      } }
     catch (e) { mensagem(traduzir(e), true); }
   }
   function fechar() { if (painel) painel.hidden = true; D.body.classList.remove('cs-aberto'); }
@@ -435,6 +455,93 @@
       finally { resumoEmCurso = null; }
     })();
     return resumoEmCurso;
+  }
+
+  // ---------- Nenhum cadastro só no navegador ----------
+  // Formulários legados de cadastro gravavam em localStorage (dados presos ao aparelho de quem lançou).
+  // Agora o envio é interceptado antes do código legado e abre o cadastro do servidor já preenchido.
+  const LEGADOS = {
+    'form-principal-cadastro-cliente': ['clientes', { 'cad-cli-nome': 'nome', 'cad-cli-doc': 'documento', 'cad-cli-tel': 'telefone', 'cad-cli-email': 'email', 'cad-cli-cidade': 'cidade', 'cad-cli-obs': 'observacao' }],
+    'form-novo-cliente-rapido': ['clientes', { 'cli-inp-nome': 'nome', 'cli-inp-doc': 'documento', 'cli-inp-tel': 'telefone', 'cli-inp-cidade': 'cidade', 'cli-inp-obs': 'observacao' }],
+    'form-cadastro-vendedor-estab': ['vendedores', { 'vend-inp-nome': 'nome', 'vend-inp-tel': 'telefone', 'vend-inp-comissao': 'comissao_pct:numero' }],
+    'form-cadastro-motorista-estab': ['motoristas', { 'mot-inp-nome': 'nome', 'mot-inp-cnh': 'cnh_numero', 'mot-inp-cat': 'cnh_categoria', 'mot-inp-validade': 'cnh_validade' }],
+    'form-cadastro-veiculo-frota': ['veiculos', { 'frota-veic-placa': 'placa', 'frota-veic-modelo': 'modelo', 'frota-veic-tipo': 'tipo', 'frota-veic-combustivel': 'combustivel:minusculo' }],
+    'form-cadastrar-produto-4secoes-fase22': ['produtos', { 'cp22-sku': 'codigo', 'cp22-nome': 'descricao', 'cp22-categoria': 'categoria', 'cp22-descricao': 'observacao' }],
+    'form-cadastrar-produto-fator': ['produtos', { 'prod-fator-codigo': 'codigo', 'prod-fator-nome': 'descricao', 'prod-fator-un-fator': 'unidade:maiusculo', 'prod-fator-segmento': 'categoria' }],
+    'form-cadastrar-deposito-v168': ['depositos', { 'dep-inp-nome': 'nome', 'dep-inp-endereco': 'localizacao' }],
+    'form-cadastro-cc-lote2': ['centros_custo', { 'inp-cc-codigo-lote2': 'codigo', 'inp-cc-nome-lote2': 'nome', 'inp-cc-descricao-lote2': 'descricao', 'inp-cc-escopo-lote2': 'tipo:escopo' }],
+    'form-cadastro-hierarquico-cc-fase22': ['centros_custo', { 'cc-h-codigo': 'codigo', 'cc-h-nome': 'nome' }],
+    'form-cadastro-edicao-conta-bancaria-estab': ['contas_bancarias', { 'cta-inp-nome': 'nome', 'cta-inp-banco': 'banco', 'cta-inp-agencia': 'agencia', 'cta-inp-conta': 'conta' }],
+    'form-editar-conta-bancaria-v171': ['contas_bancarias', { 'edit-cta-nome': 'nome', 'edit-cta-banco': 'banco', 'edit-cta-agencia': 'agencia', 'edit-cta-conta': 'conta' }],
+    'form-adicionar-feriado': ['feriados', { 'inp-novo-feriado-data': 'data', 'inp-novo-feriado-nome': 'nome' }],
+    'form-cadastrar-preco-insumo': ['precos_insumo', { 'preco-inp-nome': 'nome', 'preco-inp-categoria': 'categoria', 'preco-inp-unidade': 'unidade', 'preco-inp-valor': 'preco_centavos:dinheiro', 'preco-inp-data': 'data', 'preco-inp-rendimento': 'rendimento', 'preco-inp-fornecedor': 'observacao' }],
+    'form-cadastrar-estoque-epi': ['epis', { 'cad-epi-nome': 'nome', 'cad-epi-codigo': 'codigo', 'cad-epi-categoria': 'categoria', 'cad-epi-tamanho': 'tamanho', 'cad-epi-preco': 'preco_centavos:dinheiro', 'cad-epi-minimo': 'estoque_minimo:numero' }],
+    'form-registrar-movimentacao-fin': ['despesas', { 'fin-reg-descricao': 'descricao', 'fin-reg-valor': 'valor_centavos:dinheiro', 'fin-reg-vencimento': 'vencimento' }],
+  };
+  // Não viram cadastro: contas de acesso nascem no Supabase Auth; empresas são provisionadas no banco.
+  const BLOQUEADOS = {
+    'form-novo-fiscal': 'Acesso de fiscal externo é uma conta de login: deve ser criado pelo administrador no Supabase Auth, nunca com senha guardada no navegador.',
+    'form-cadastrar-empresa': 'As empresas do grupo são cadastradas no banco pelo administrador. Peça a inclusão ou alteração ao Master responsável.',
+  };
+  function converter(valor, tipo) {
+    if (valor === '' || valor === null || valor === undefined) return undefined;
+    if (tipo === 'numero') { const n = Number(String(valor).replace(',', '.')); return Number.isFinite(n) ? n : undefined; }
+    if (tipo === 'dinheiro') { try { return centavos(String(valor).includes(',') ? valor : String(valor).replace('.', ',')); } catch { return undefined; } }
+    if (tipo === 'minusculo') return String(valor).toLowerCase();
+    if (tipo === 'maiusculo') return String(valor).toUpperCase();
+    if (tipo === 'escopo') return /obra/i.test(valor) ? 'obra' : 'administrativo';
+    return valor;
+  }
+  function lerLegado(form, mapa) {
+    const d = {};
+    for (const [campo, destino] of Object.entries(mapa)) {
+      const [chave, tipo] = destino.split(':');
+      const elemento = form.querySelector('#' + CSS.escape(campo)) || D.getElementById(campo);
+      const v = converter(elemento?.value?.trim(), tipo);
+      if (v !== undefined) d[chave] = chave === 'observacao' && d.observacao ? d.observacao + ' · ' + v : v;
+    }
+    return d;
+  }
+  function avisar(texto) { if (typeof W.showToast === 'function') W.showToast(texto, 'warning'); else mensagem(texto, true); }
+  D.addEventListener('submit', ev => {
+    const form = ev.target;
+    const id = form?.id || '';
+    const chave = LEGADOS[id] ? id : (/^form-cadastro-motorista-/.test(id) ? 'form-cadastro-motorista-estab' : null);
+    if (!chave && !BLOQUEADOS[id]) return;
+    ev.preventDefault(); ev.stopImmediatePropagation();
+    form.closest('[id^=modal-]')?.classList.add('hidden');
+    if (BLOQUEADOS[id]) { avisar(BLOQUEADOS[id]); return; }
+    if (id === 'form-registrar-movimentacao-fin' && /entrada|receita|receb/i.test(form.querySelector('#fin-reg-tipo')?.value || '')) {
+      avisar('Entradas e contas a receber ainda não estão no servidor. Somente despesas (saídas) são lançadas por enquanto.'); return;
+    }
+    const [modulo, mapa] = LEGADOS[chave];
+    abrir(modulo, lerLegado(form, mapa));
+  }, true);
+
+  // Defesa em profundidade: funções legadas que criam/alteram cadastros direto no navegador ficam
+  // indisponíveis, mesmo que outro trecho do código legado tente redefini-las depois.
+  const FUNCOES_LEGADAS = {
+    cadastrarOuEditarVendedorComercial: 'vendedores', cadastrarOuEditarMotoristaFrota: 'motoristas', submeterNovoVeiculoFrotaUi: 'veiculos',
+    cadastrarOuEditarProdutoMultimedidaFase22: 'produtos', salvarProdutoFatorForm: 'produtos', salvarProdutoComFatorConversaoValidado: 'produtos',
+    salvarNovoDepositoFormUi: 'depositos', cadastrarOuEditarDepositoEstoque: 'depositos', cadastrarDepositoEstoqueRapido: 'depositos',
+    salvarItemOuSubitemCentroCustoFase22: 'centros_custo', cadastrarOuEditarCentroDeCusto: 'centros_custo',
+    salvarContaBancariaEstab: 'contas_bancarias', salvarEdicaoContaBancariaV171: 'contas_bancarias', cadastrarOuEditarContaCorrenteBancaria: 'contas_bancarias',
+    submeterFormularioPrincipalClienteUi: 'clientes', salvarNovoClienteRapidoForm: 'clientes',
+  };
+  // Só reage com aviso/painel quando a chamada vem de uma ação recente da pessoa; chamadas automáticas
+  // do código legado (ex.: semear dados de demonstração na carga) são recusadas em silêncio.
+  let ultimaAcao = 0;
+  for (const tipo of ['pointerdown', 'keydown', 'submit']) D.addEventListener(tipo, () => { ultimaAcao = Date.now(); }, true);
+  for (const [nome, modulo] of Object.entries(FUNCOES_LEGADAS)) {
+    const bloqueio = function () {
+      const evento = arguments[0];
+      if (evento && typeof evento.preventDefault === 'function') evento.preventDefault();
+      if (Date.now() - ultimaAcao > 2000) return { sucesso: false, codigo: 'CADASTRO_NO_SERVIDOR', erro: 'Cadastro local desativado.' };
+      avisar('Cadastro de ' + MODULOS[modulo].titulo.toLowerCase() + ' agora é feito em "Cadastros e Despesas" (gravado no servidor).');
+      abrir(modulo);
+      return { sucesso: false, codigo: 'CADASTRO_NO_SERVIDOR', erro: 'Use Cadastros e Despesas: o cadastro é gravado no servidor.' };
+    };
+    try { Object.defineProperty(W, nome, { configurable: false, enumerable: true, get: () => bloqueio, set: () => {} }); } catch (_) { /* já protegido */ }
   }
 
   W.MartinsCadastrosServidor = Object.freeze({ abrir, fechar, atualizarFinanceiro, modulos: ORDEM.slice() });

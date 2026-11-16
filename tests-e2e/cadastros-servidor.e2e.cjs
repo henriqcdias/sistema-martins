@@ -29,7 +29,7 @@ async function banco() {
     CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$ SELECT nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;`);
   await db.exec(sql('supabase/producao/base/estrutura_anterior_as_migracoes.sql'));
   await db.exec(`INSERT INTO public.martins_empresas(id, razao_social) VALUES ('${E}', 'Construtora Martins - cadastro inicial');`);
-  for (const d of ['supabase/producao/migrations', 'supabase/v2/migrations'])
+  for (const d of ['supabase/producao/migrations', 'supabase/v2/migrations', 'supabase/v3/migrations'])
     for (const f of fs.readdirSync(path.join(raiz, d)).sort()) await db.exec(sql(d + '/' + f));
   const [M, L] = Object.values(USUARIOS);
   await db.exec(`INSERT INTO auth.users VALUES ('${M}','master@teste.invalid'),('${L}','lancador@teste.invalid');
@@ -250,6 +250,48 @@ async function novo(page, campos) {
     await pm2.click('#cs-painel button:text-is("+ Novo")');
     check((await pm2.$$eval('#cs-obra_id option', os => os.map(o => o.textContent))).some(t => t.includes('QA Obra Engenharia')), 'a obra aparece para vincular em Despesa de obra');
     await pm2.evaluate(() => window.MartinsCadastrosServidor.fechar());
+
+    console.log('Nenhum cadastro só no navegador (formulários legados)');
+    const semRastroLocal = async (pg, texto) => pg.evaluate(t => Object.keys(localStorage).filter(k => (localStorage.getItem(k) || '').includes(t)), texto);
+    const abrirLegado = async (pg, formId) => pg.evaluate(f => { const form = document.getElementById(f); const modal = form.closest('[id^=modal-]'); if (modal) { modal.classList.remove('hidden'); modal.style.display = 'flex'; } return !!form; }, formId);
+    check(await abrirLegado(pm2, 'form-novo-cliente-rapido'), 'formulário legado de cliente rápido existe na tela');
+    await pm2.fill('#cli-inp-nome', 'Cliente Legado'); await pm2.fill('#cli-inp-doc', '111.444.777-35'); await pm2.fill('#cli-inp-tel', '(35) 0000-0000');
+    await pm2.$eval('#form-novo-cliente-rapido', f => f.requestSubmit());
+    await pm2.waitForSelector('#cs-painel .cs-form #cs-nome', { timeout: 10000 });
+    check(await pm2.$eval('#cs-nome', n => n.value === 'Cliente Legado') && await pm2.$eval('#cs-documento', n => n.value === '111.444.777-35'),
+      'o envio do formulário legado abre o cadastro do servidor já preenchido');
+    await pm2.click('#cs-painel button:text-is("Salvar no servidor")');
+    await pm2.waitForSelector('#cs-painel td:text-is("Cliente Legado")');
+    check((await db.query(`SELECT 1 FROM martins_producao_v1.registros WHERE modulo='clientes' AND dados->>'nome'='Cliente Legado'`)).rows.length === 1, 'o cliente é gravado no servidor');
+    check((await semRastroLocal(pm2, 'Cliente Legado')).length === 0, 'nada do cliente fica gravado no navegador (localStorage)');
+    await pm2.evaluate(() => window.MartinsCadastrosServidor.fechar());
+
+    await abrirLegado(pm2, 'form-adicionar-feriado');
+    await pm2.$eval('#inp-novo-feriado-data', n => { n.value = '2026-12-25'; }); await pm2.fill('#inp-novo-feriado-nome', 'Natal');
+    await pm2.$eval('#form-adicionar-feriado', f => f.requestSubmit());
+    await pm2.waitForSelector('#cs-painel .cs-form #cs-data', { timeout: 10000 });
+    await pm2.click('#cs-painel button:text-is("Salvar no servidor")');
+    await pm2.waitForSelector('#cs-painel td:text-is("Natal")');
+    check((await db.query(`SELECT 1 FROM martins_producao_v1.registros WHERE modulo='feriados' AND dados->>'data'='2026-12-25'`)).rows.length === 1, 'feriado do formulário legado vai para o servidor (módulo v3)');
+    await pm2.evaluate(() => window.MartinsCadastrosServidor.fechar());
+
+    await abrirLegado(pm2, 'form-novo-fiscal');
+    await pm2.fill('#nf-nome', 'Fiscal Teste'); await pm2.fill('#nf-usuario', 'fiscal.teste.e2e'); await pm2.fill('#nf-orgao', 'Prefeitura'); await pm2.fill('#nf-senha', 'senha-provisoria-e2e');
+    await pm2.$eval('#form-novo-fiscal', f => f.requestSubmit());
+    await pm2.waitForFunction(() => /Supabase Auth/.test(document.getElementById('toast-msg')?.textContent || ''), null, { timeout: 8000 });
+    check((await semRastroLocal(pm2, 'senha-provisoria-e2e')).length === 0 && (await semRastroLocal(pm2, 'fiscal.teste.e2e')).length === 0,
+      'cadastro de fiscal (login com senha) é bloqueado e nada fica no navegador');
+
+    await pm2.evaluate(() => window.MartinsCadastrosServidor.fechar()); await pm2.waitForTimeout(2600);
+    const bloqueio = await pm2.evaluate(() => {
+      const antes = window.cadastrarOuEditarVendedorComercial({ nome: 'Vendedor Local' });
+      window.cadastrarOuEditarVendedorComercial = () => ({ sucesso: true });
+      const depois = window.cadastrarOuEditarVendedorComercial({ nome: 'Vendedor Local' });
+      return { antes: antes.codigo, depois: depois.codigo, painel: !document.getElementById('cs-painel').hidden };
+    });
+    check(bloqueio.antes === 'CADASTRO_NO_SERVIDOR' && bloqueio.depois === 'CADASTRO_NO_SERVIDOR', 'função legada de cadastro continua bloqueada mesmo se o código tentar redefini-la');
+    check(!bloqueio.painel, 'chamada automática (sem ação da pessoa) é recusada em silêncio, sem abrir o painel');
+    check((await semRastroLocal(pm2, 'Vendedor Local')).length === 0, 'nenhum vendedor local é gravado');
 
     console.log('Financeiro');
     await pm2.evaluate(() => window.navegarParaSecao('financeiro'));

@@ -93,3 +93,17 @@ Legenda: ✅ grava no servidor · 🟦 contrato v2 pronto (falta aplicar e ligar
 4. Produção (ordens; consumo e entrada só na confirmação).
 5. Folha e vales no servidor (limite de 40%).
 6. Unificar os modelos de permissão (`martins_perfis.papel` × `martins_online_acessos`) e acrescentar excluir, aprovar, exportar e compartilhar.
+
+## Inventário de formulários (atualizado em 16/11/2026)
+
+Dos 52 formulários do sistema, nenhum formulário de **cadastro** grava mais só no navegador. A camada `cadastros-servidor.js` intercepta o envio antes do código legado e trava as funções legadas de cadastro (`Object.defineProperty`, resistente a redefinição).
+
+| Situação | Formulários |
+|---|---|
+| ✅ Gravam no servidor diretamente (`formularios.js`) | funcionário (3 formulários), obra (3, incluindo o cadastro completo da Engenharia), RDO, orçamento |
+| ✅ Redirecionados ao cadastro do servidor, já preenchidos | cliente (2), vendedor, motorista (2), veículo, produto (2), depósito, centro de custo (2), conta bancária (2), despesa (movimentação financeira de saída), feriado, preço de insumo, EPI |
+| ⛔ Bloqueados de propósito | "Novo fiscal" (criava login com senha no navegador; contas são criadas no Supabase Auth), "Cadastrar empresa" (provisionada no banco) e movimentação financeira de **entrada** (contas a receber ainda sem contrato) |
+| 🟡 Lançamentos operacionais ainda locais (próxima etapa, exigem contrato com regra de negócio) | movimentação de estoque (2), pedido de compra (2), cotação, NF-e, abastecimento/manutenção, transferência entre contas, distribuição de EPI, advertência, falta, ausência, férias, ajuste de ponto, recibo, documento da ficha, aditivo (2), etapa de cronograma, item de planilha, orçamento otimizado, permissões CREA |
+| — Não se aplica | login, primeiro acesso, link compartilhado |
+
+**Ainda falta nas telas antigas:** as listas e os seletores de Vendas, Estoque, Frota e Gestão de Centros de Custo continuam lendo as chaves locais (por exemplo, 7 chaves de centros de custo e 6 de contas bancárias). Os cadastros novos já vão para o servidor e aparecem em "Cadastros e Despesas", no Financeiro, nas obras e nas despesas. A próxima etapa é fazer essas listas lerem do servidor, tela por tela.

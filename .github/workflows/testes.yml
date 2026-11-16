@@ -24,3 +24,5 @@ jobs:
           node supabase/producao/validar-contratos.cjs .
       - name: Contratos v2 (cadastros e despesas confidenciais)
         run: node supabase/v2/validar-v2.cjs .
+      - name: Contratos v3 (cadastros auxiliares)
+        run: node supabase/v3/validar-v3.cjs .

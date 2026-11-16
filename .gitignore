@@ -1,1 +1,7 @@
 /dist-producao/
+/dist-qa/
+/.build-producao-*/
+/.build-qa-*/
+/.firebase/
+firebase-debug.log
+.DS_Store

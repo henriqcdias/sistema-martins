@@ -1,0 +1,18 @@
+{
+  "projects": {
+    "default": "sistema-martins-erp"
+  },
+  "targets": {
+    "sistema-martins-erp": {
+      "hosting": {
+        "homologacao": [
+          "sistema-martins-hml"
+        ],
+        "producao": [
+          "sistema-martins-erp"
+        ]
+      }
+    }
+  },
+  "etags": {}
+}

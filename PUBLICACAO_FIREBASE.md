@@ -11,20 +11,17 @@ Os dois builds mantêm as gravações bloqueadas (`PREVIA_SOMENTE_LEITURA`).
 
 O `firebase.json` reproduz as regras de `dist-producao-fonte/_headers` e `_redirects`: rotas da SPA, cabeçalhos de segurança e `sw.js` sem cache. A homologação também envia `X-Robots-Tag: noindex`. O teste `tests/firebase-hosting.cjs` falha se as duas configurações divergirem. A CSP continua na tag `<meta>` do `index.html`, que cada build ajusta para o seu projeto Supabase.
 
-## 1. Preparação (uma vez, feita por um responsável do Grupo Martins)
+## 1. Projeto atual
 
-1. Crie um projeto no [console do Firebase](https://console.firebase.google.com) **numa conta do Grupo Martins**. O plano gratuito (Spark) basta para o Hosting. Adicione o desenvolvedor como colaborador.
-2. Em Hosting, crie dois sites, por exemplo `martins-erp-hml` (homologação) e `martins-erp` (produção).
-3. No terminal, na raiz do repositório:
-   ```bash
-   npm install -g firebase-tools
-   firebase login
-   firebase use --add                          # escolha o projeto e dê o alias "default"
-   firebase target:apply hosting homologacao martins-erp-hml
-   firebase target:apply hosting producao martins-erp
-   ```
-   Isso cria o `.firebaserc`, que pode ser versionado porque não contém segredos.
-4. No Supabase **QA**, em Authentication → URL Configuration, adicione `https://martins-erp-hml.web.app/**` às Redirect URLs. Sem isso, os links de recuperação de senha e de convite voltam para o endereço antigo. Repita no projeto de produção somente quando ele for liberado.
+| | |
+|---|---|
+| Projeto Firebase | `sistema-martins-erp` (plano Spark), criado em 16/11/2026 na conta pessoal do desenvolvedor. **Pendente:** transferir para uma conta do Grupo Martins (Configurações do projeto → Usuários e permissões → adicionar a conta do Grupo como Proprietário e, depois, remover a conta pessoal) |
+| Homologação | site `sistema-martins-hml`, em https://sistema-martins-hml.web.app |
+| Produção | site `sistema-martins-erp`, em https://sistema-martins-erp.web.app. Não publicar sem autorização |
+
+O `.firebaserc` versionado já liga o repositório ao projeto e aos dois destinos. Para publicar de outra máquina: `npm install -g firebase-tools` e `firebase login` com uma conta que seja membro do projeto.
+
+No Supabase **QA**, em Authentication → URL Configuration, adicione `https://sistema-martins-hml.web.app/**` às Redirect URLs. Sem isso, os links de recuperação de senha e de convite voltam para o endereço antigo. Repita no projeto de produção, com `https://sistema-martins-erp.web.app/**`, somente quando ele for liberado.
 
 ## 2. Publicar a homologação (somente leitura)
 

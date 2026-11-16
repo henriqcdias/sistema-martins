@@ -63,6 +63,6 @@ try {
   if (forbidden.length) throw new Error('Artefato QA contem referencia proibida: ' + forbidden.join(', '));
   if (!fs.readFileSync(path.join(tmp,'auth-v5.js'),'utf8').includes('PREVIA_SOMENTE_LEITURA')) throw new Error('Trava de escrita nao encontrada.');
   fs.renameSync(tmp, output);
-  console.log('Build QA gerado em dist-qa/. Ambiente isolado e gravacoes bloqueadas.');
+  console.log('Build QA gerado em dist-qa/. Ambiente isolado; ' + (process.env.VITE_MARTINS_QA_GRAVACAO === 'HABILITADA' ? 'GRAVACAO HABILITADA (homologacao).' : 'gravacoes bloqueadas (somente leitura).'));
 } catch (e) { console.error('Build QA bloqueado: ' + e.message); process.exitCode=1; }
 finally { fs.rmSync(tmp, {recursive:true, force:true}); }

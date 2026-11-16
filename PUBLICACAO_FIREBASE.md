@@ -7,7 +7,7 @@ O Firebase serve só o frontend. O banco e a autenticação v5 continuam no Supa
 | `homologacao` | `dist-qa/` | `node scripts/preparar-build-qa.cjs` | QA `oczxyiakpmgnrpoyhwov` |
 | `producao` | `dist-producao/` | `node scripts/preparar-build-producao.cjs` | Produção `kkjwmnxgcbonbwavaaya` |
 
-Os dois builds mantêm as gravações bloqueadas (`PREVIA_SOMENTE_LEITURA`).
+Por padrão, os dois builds bloqueiam gravações (`PREVIA_SOMENTE_LEITURA`). **Só a homologação** pode gravar, quando o build é gerado com `VITE_MARTINS_QA_GRAVACAO=HABILITADA`. A liberação foi autorizada pelo responsável em 16/11/2026 e é a publicação atual de `sistema-martins-hml`. O build de produção nunca escreve essa opção, e `verificar-build-producao.cjs` recusa um artefato que a contenha.
 
 O `firebase.json` reproduz as regras de `dist-producao-fonte/_headers` e `_redirects`: rotas da SPA, cabeçalhos de segurança e `sw.js` sem cache. A homologação também envia `X-Robots-Tag: noindex`. O teste `tests/firebase-hosting.cjs` falha se as duas configurações divergirem. A CSP continua na tag `<meta>` do `index.html`, que cada build ajusta para o seu projeto Supabase.
 
@@ -28,7 +28,7 @@ No Supabase **QA**, em Authentication → URL Configuration, adicione `https://s
 ```bash
 node --test tests/*.cjs
 export VITE_SUPABASE_QA_ANON_KEY='sb_publishable_...'   # chave publicável do QA, nunca sb_secret_ nem service_role
-rm -rf dist-qa && node scripts/preparar-build-qa.cjs
+rm -rf dist-qa && VITE_MARTINS_QA_GRAVACAO=HABILITADA node scripts/preparar-build-qa.cjs   # sem a variável: somente leitura
 firebase emulators:start --only hosting:homologacao     # opcional: testa em http://127.0.0.1:5000
 firebase deploy --only hosting:homologacao
 ```

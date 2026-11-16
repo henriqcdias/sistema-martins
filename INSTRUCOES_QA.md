@@ -1,7 +1,7 @@
 # Sistema Martins — homologação no Supabase QA (somente leitura)
 
 Projeto Supabase QA: `oczxyiakpmgnrpoyhwov`. Produção (`kkjwmnxgcbonbwavaaya`) não é usada: o build QA falha se encontrar essa URL.
-Gravações continuam bloqueadas (`PREVIA_SOMENTE_LEITURA`). Não use "Desbloquear edição".
+Atualização de 16/11/2026: a homologação no Firebase (`sistema-martins-hml.web.app`) **grava** no Supabase QA, por autorização do responsável (veja `PUBLICACAO_FIREBASE.md`). A produção continua somente leitura.
 
 ## Opção A — usar a pasta pronta (`Sistema_Martins_QA_publicavel.zip`)
 1. Extraia o ZIP.

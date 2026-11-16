@@ -49,7 +49,9 @@
  }
  function preencherSelect(s,lista,label='Selecione...',prefixo=''){
   if(!s)return;const prev=s.value;const assinatura=JSON.stringify(lista.map(x=>[x.id,x.nome]));
-  if(s.dataset.catalogoProducao===assinatura)return;s.dataset.catalogoProducao=assinatura;
+  // Telas legadas às vezes repovoam o select com dados locais: confere as opções reais, não só a marcação.
+  const atuais=JSON.stringify([...s.options].slice(1).map(o=>[o.value.replace(prefixo,''),o.textContent]));
+  if(s.dataset.catalogoProducao===assinatura&&atuais===assinatura)return;s.dataset.catalogoProducao=assinatura;
   s.replaceChildren(new Option(label,''));for(const x of lista)s.add(new Option(x.nome,prefixo+x.id));
   if([...s.options].some(o=>o.value===prev))s.value=prev;
  }
@@ -58,6 +60,7 @@
   for(const s of D.querySelectorAll('.sel-trab-cadastrado')){const item=typeof currentTrabalhadores!=='undefined'?currentTrabalhadores[Number(s.dataset.index)]:null;preencherSelect(s,catalogos.funcionarios,'Selecione o funcionário');if(item?.funcionario_id&&catalogos.funcionarios.some(x=>x.id===item.funcionario_id))s.value=item.funcionario_id;}
 
   for(const id of ['obra-select','gestao-obra-select','nc-obra','edit-colab-obra','filtro-obra-hist','orc-inp-obra','atividade-obra-select','ficha-inp-obra']){const s=el(id);if(s?.tagName==='SELECT'){preencherSelect(s,catalogos.obras,id==='filtro-obra-hist'?'Todas as obras':'Selecione a obra');if(id==='filtro-obra-hist'&&s.options[0])s.options[0].value='todas';}}
+  if(el('obra-inp-cliente-select')?.tagName==='SELECT'&&Array.isArray(catalogos.clientes))preencherSelect(el('obra-inp-cliente-select'),catalogos.clientes,'Selecione o cliente (cadastro compartilhado)');
   for(const id of ['select-add-trabalhador','colab-select','rf-colab-select','rel-colab-select'])if(el(id)?.tagName==='SELECT')preencherSelect(el(id),catalogos.funcionarios,'Selecione o funcionário');
   for(const s of D.querySelectorAll('.sel-destino-ponto')){
    const key=JSON.stringify(catalogos.obras);if(s.dataset.catalogoProducao===key)continue;const prev=s.value;
@@ -142,10 +145,12 @@
   if(empresa)await carregar();else {D.body.dataset.empresaProducao='ativa';atualizarVisoes();mensagem('Selecione sua empresa para consultar os dados.');}
  };
  W.MartinsProducaoOnEmpresa=()=>{};
- async function enviar(modulo,conteudo,id=null,rev=null){
+ async function enviar(modulo,conteudo,id=null,rev=null,{somente=null}={}){
   const e=requireEmpresa();if(!api)throw Error('Entre com sua sessão v5.');const antigo=id?registro(modulo,id):null;
   if(id&&!antigo)throw Error('Registro não encontrado na empresa ativa. Recarregue a consulta.');
-  const d={...(antigo?.dados||{}),...clone(conteudo)};delete d.id;delete d.empresaId;delete d.empresa_id;delete d.revisao;delete d.rowVersion;
+  // Com 'somente', envia apenas essas chaves (o servidor completa o restante a partir do registro atual).
+  const base=somente?{}:(antigo?.dados||{}),novo=clone(conteudo);if(somente)for(const k of Object.keys(novo))if(!somente.includes(k))delete novo[k];
+  const d={...base,...novo};delete d.id;delete d.empresaId;delete d.empresa_id;delete d.revisao;delete d.rowVersion;
   return W.MartinsProducaoRpc.comRascunho(e,async(estado,persistir)=>{
    estado.pendentes??={};let cmd=estado.pendentes[modulo];
    if(cmd){if(JSON.stringify(cmd.dados)!==JSON.stringify(d)||cmd.id!==(id||cmd.id))throw Error('Há uma operação pendente deste módulo. Use Reenviar pendentes antes de alterar os dados.');api.restore(cmd);}
@@ -179,7 +184,31 @@
   const d={nome:val(p+'nome'),clienteResponsavel:val(p+'cliente'),valorContratado:num(val(editar?'mo-valor':'nova-obra-valor')),responsavelTecnico:val(p+'resp'),dataInicio:val('mo-data-inicio'),previsaoConclusao:val('mo-data-fim'),situacaoAtual:editar?val('mo-status'):'Em Planejamento'};
   if(!d.nome||!d.clienteResponsavel||d.valorContratado<0)throw Error('Confira nome, cliente e valor da obra.');
   d.codigo=editar?registro('obras',id)?.dados.codigo:'OBR-'+crypto.randomUUID().slice(0,8).toUpperCase();
-  await enviar('obras',d,id,editar?snapshot(form,id,'obras'):0);
+  await enviar('obras',d,id,editar?snapshot(form,id,'obras'):0,ehMaster()?{}:{somente:CAMPOS_OBRA_OPERACIONAIS});
+ }
+ const CAMPOS_OBRA_OPERACIONAIS=['nome','codigo','status','clienteResponsavel','enderecoLocalizacao','responsavelTecnico','encarregado','equipesVinculadas','equipesTerceirizadas','dataInicio','previsaoConclusao','situacaoAtual','descricao'];
+ const ehMaster=()=>contexto()?.vinculos.find(v=>v.empresa_id===empresa)?.papelServidor==='master';
+ async function formularioObraCompleta(form){
+  const nome=val('obra-inp-nome');if(!nome)throw Error('Informe o nome da obra.');
+  const nomeOriginal=val('obra-inp-nome-original'),edicao=el('obra-inp-is-edicao')?.value==='true';
+  const codigoInformado=val('obra-inp-codigo');
+  const existente=edicao?[...dados.obras.values()].find(r=>r.dados.nome===nomeOriginal||(codigoInformado&&r.dados.codigo===codigoInformado)):null;
+  if(edicao&&!existente)throw Error('Obra não encontrada no servidor para edição. Use Atualizar dados e abra a obra novamente.');
+  const clienteSel=el('obra-inp-cliente-select'),clienteId=uuid(clienteSel?.value)?clienteSel.value:null;
+  const clienteNome=clienteId?(catalogos.clientes||[]).find(c=>c.id===clienteId)?.nome||'':(clienteSel?.selectedOptions?.[0]?.value?clienteSel.selectedOptions[0].textContent.trim():'');
+  const endereco=[val('obra-inp-logradouro'),val('obra-inp-numero-end'),val('obra-inp-complemento'),val('obra-inp-bairro'),[val('obra-inp-cidade'),val('obra-inp-estado')].filter(Boolean).join('/'),val('obra-inp-cep')].filter(Boolean).join(', ');
+  const d={nome,codigo:codigoInformado||existente?.dados.codigo||'OBR-'+crypto.randomUUID().slice(0,8).toUpperCase(),
+   status:val('obra-inp-status'),situacaoAtual:val('obra-inp-status'),clienteResponsavel:clienteNome,enderecoLocalizacao:endereco,
+   responsavelTecnico:val('obra-inp-resp'),encarregado:val('obra-inp-resp-obra'),dataInicio:val('obra-inp-data-inicio'),previsaoConclusao:val('obra-inp-data-fim'),
+   // Campos adicionais (gravados só pelo Master; o servidor recusa de outros perfis).
+   tipo:val('obra-inp-tipo'),visivel:val('obra-inp-visivel'),cliente_id:clienteId,areaM2:val('obra-inp-area')?num(val('obra-inp-area')):null,unidade:val('obra-inp-unidade'),art:val('obra-inp-art'),cei:val('obra-inp-cei'),
+   cep:val('obra-inp-cep'),logradouro:val('obra-inp-logradouro'),numero:val('obra-inp-numero-end'),complemento:val('obra-inp-complemento'),bairro:val('obra-inp-bairro'),estado:val('obra-inp-estado'),cidade:val('obra-inp-cidade'),
+   justificativaPrazo:val('obra-inp-justificativa-prazo'),valorContratado:val('obra-inp-valor')?num(val('obra-inp-valor')):null,numeroContrato:val('obra-inp-num-contrato'),dadosBancarios:val('obra-inp-dados-bancarios')};
+  if(d.valorContratado!==null&&d.valorContratado<0)throw Error('Valor contratual inválido.');
+  const master=ehMaster(),financeiroPreenchido=!master&&(d.valorContratado||d.numeroContrato||d.dadosBancarios);
+  const r=await enviar('obras',d,existente?.id||null,existente?snapshot(form,existente.id,'obras'):0,master?{}:{somente:CAMPOS_OBRA_OPERACIONAIS});
+  W.fecharModalCadastroObraCompleto?.();
+  return financeiroPreenchido?{aviso:'Obra salva. Valor, nº do contrato e dados bancários são gravados somente pelo Master.'}:r;
  }
  function trabalhadoresRdo(){
   const list=typeof currentTrabalhadores!=='undefined'?currentTrabalhadores:W.currentTrabalhadores||[];
@@ -205,7 +234,7 @@
   const cards=D.createElement('div');cards.className='grid grid-cols-2 md:grid-cols-5 gap-3';for(const m of ['funcionarios','obras','rdos','frequencia','orcamentos']){const c=D.createElement('div');c.className='bg-white border rounded-xl p-4';c.textContent=m+': '+dados[m].size;cards.append(c);}sec.append(cards);
   for(const o of catalogos.obras){const b=D.createElement('button');b.type='button';b.className='block bg-white border rounded p-3 w-full text-left';b.textContent=o.nome;b.onclick=()=>{if(el('gestao-obra-select'))el('gestao-obra-select').value=o.id;try{W.renderGestaoObra?.(o.id);}catch{}D.querySelector('[data-view="gestao-obras"]')?.click();};sec.append(b);}painel.append(sec);
  }
- const handlers={'form-novo-colaborador':formularioFuncionario,'form-editar-colaborador':formularioFuncionario,'form-editar-ficha-colab-estab':formularioFuncionario,'form-nova-obra-sistema':formularioObra,'form-gestao-obra':formularioObra,'form-rdo':formularioRdo,'form-novo-orcamento-venda':formularioOrcamento};
+ const handlers={'form-novo-colaborador':formularioFuncionario,'form-editar-colaborador':formularioFuncionario,'form-editar-ficha-colab-estab':formularioFuncionario,'form-nova-obra-sistema':formularioObra,'form-gestao-obra':formularioObra,'form-rdo':formularioRdo,'form-novo-orcamento-venda':formularioOrcamento,'form-cadastro-obra-completo':formularioObraCompleta};
  // Recusa definitiva do servidor (dado inválido, duplicado, referência, permissão, conflito): reenviar a mesma
  // operação daria o mesmo erro, então ela não fica pendente. Falhas de rede/limite continuam pendentes para reenvio.
  function recusaDefinitiva(error){const c=String(error?.code||'');return /^(22|23)[0-9A-Z]{3}$/.test(c)||['42501','40001','PGRST202','PGRST106'].includes(c);}
@@ -214,7 +243,7 @@
  async function submeter(form){
   if(form.dataset.enviandoProducao==='1')return;form.dataset.enviandoProducao='1';ocupado++;
   const buttons=[...form.querySelectorAll('button[type=submit]')];buttons.forEach(b=>b.disabled=true);const controls=[...form.querySelectorAll('input,select,textarea')].map(x=>[x,x.disabled]);controls.forEach(([x])=>x.disabled=true);mensagem('Aguardando confirmação do Supabase…');
-  try{await comDesbloqueio(()=>handlers[form.id](form));dirty=false;await carregar();mensagem('Salvamento confirmado e relido no Supabase.');if(form.id!=='form-rdo'){form.closest('[id^=modal-]')?.classList.add('hidden');delete form.dataset.registroProducao;delete form.dataset.revisaoProducao;}}
+  try{const resultado=await comDesbloqueio(()=>handlers[form.id](form));dirty=false;await carregar();mensagem(resultado?.aviso||'Salvamento confirmado e relido no Supabase.',!!resultado?.aviso);if(form.id!=='form-rdo'){form.closest('[id^=modal-]')?.classList.add('hidden');delete form.dataset.registroProducao;delete form.dataset.revisaoProducao;}}
   catch(error){mensagem((error.code==='40001'?'Outra sessão alterou este registro. Seu formulário foi preservado. Recarregue para comparar. ': '')+error.message,true);}
   finally{ocupado--;form.dataset.enviandoProducao='0';buttons.forEach(b=>b.disabled=false);controls.forEach(([x,disabled])=>x.disabled=disabled);}
  }
@@ -252,6 +281,7 @@
    if(m&&id&&registro(m,id)){form.dataset.registroProducao=id;form.dataset.revisaoProducao=registro(m,id).revisao;}
   },true);
   W.salvarNovaObraSistema=event=>{event?.preventDefault();return submeter(el('form-nova-obra-sistema'));};
+  W.salvarCadastroObraCompleto=event=>{event?.preventDefault?.();return submeter(el('form-cadastro-obra-completo'));};
   W.salvarCadastroUnicoColaboradorSemDuplicidadeV170=event=>{event?.preventDefault?.();return submeter(el(event?.target?.id==='form-editar-colaborador'?'form-editar-colaborador':'form-novo-colaborador'));};
   W.salvarEdicaoColaboradorModal=()=>submeter(el('form-editar-colaborador'));
   W.salvarNovoOrcamentoVendaForm=event=>{event?.preventDefault();return submeter(el('form-novo-orcamento-venda'));};

@@ -208,6 +208,49 @@ async function novo(page, campos) {
     check(await pm2.evaluate(() => { const d = document.querySelector('#drawer-menu, #menu-drawer, [id*=drawer]:not(#btn-abrir-drawer-header):not(#btn-fechar-drawer)'); return !!d && getComputedStyle(d).display !== 'none' && d.getBoundingClientRect().width > 0; }), 'clicar em MENU abre o menu lateral');
     await pm2.keyboard.press('Escape'); await pm2.evaluate(() => document.getElementById('btn-fechar-drawer')?.click());
 
+    console.log('Obra pelo cadastro completo da Engenharia');
+    await pm2.evaluate(() => window.MartinsCadastrosServidor.abrir('clientes'));
+    await pm2.waitForFunction(() => /Clientes:/.test(document.querySelector('[data-cs=status]')?.textContent || ''));
+    await novo(pm2, { nome: 'Cliente A', documento: '11.222.333/0001-81' });
+    await pm2.waitForSelector('#cs-painel td:text-is("Cliente A")');
+    await pm2.evaluate(() => window.MartinsCadastrosServidor.fechar());
+    await pm2.waitForTimeout(1500);
+    await pm2.evaluate(() => window.abrirModalCadastroObraCompleto());
+    await pm2.waitForSelector('#modal-cadastro-obra-completo:not(.hidden) #obra-inp-nome', { timeout: 10000 });
+    const opcoesCliente = await pm2.$$eval('#obra-inp-cliente-select option', os => os.map(o => o.textContent.trim()));
+    check(opcoesCliente.some(t => t === 'Cliente A'), 'cliente da obra é escolhido entre os clientes do servidor');
+    await pm2.fill('#obra-inp-nome', 'QA Obra Engenharia');
+    await pm2.selectOption('#obra-inp-status', 'Em andamento');
+    await pm2.selectOption('#obra-inp-cliente-select', { label: 'Cliente A' });
+    await pm2.$eval('#obra-inp-data-inicio', n => { n.value = '2026-11-01'; }); await pm2.$eval('#obra-inp-data-fim', n => { n.value = '2027-05-31'; });
+    await pm2.$eval('#obra-inp-valor', n => { n.value = '250000'; });
+    await pm2.$eval('#form-cadastro-obra-completo', f => f.requestSubmit());
+    await pm2.waitForFunction(() => /Salvamento confirmado/.test(document.getElementById('producao-status')?.textContent || ''), null, { timeout: 15000 })
+      .catch(async e => { console.log('    status:', await pm2.$eval('#producao-status', n => n.textContent)); throw e; });
+    const obraDb = (await db.query(`SELECT id, dados FROM martins_producao_v1.registros WHERE modulo='obras' AND dados->>'nome'='QA Obra Engenharia'`)).rows;
+    check(obraDb.length === 1 && Number(obraDb[0].dados.valorContratado) === 250000 && obraDb[0].dados.clienteResponsavel === 'Cliente A' && obraDb[0].dados.cliente_id,
+      'obra da Engenharia é gravada no servidor com cliente e valor (antes ficava só no navegador)');
+    await pm2.reload({ waitUntil: 'networkidle' });
+    await pm2.waitForFunction(() => document.body.dataset.sessaoProducao === 'ativa' && document.body.dataset.empresaProducao === 'ativa', null, { timeout: 20000 });
+    await pm2.waitForFunction(id => [...document.querySelectorAll('#obra-select option')].some(o => o.value === id), obraDb[0].id, { timeout: 15000 })
+      .catch(() => {});
+    const seletores = await pm2.evaluate(id => ({
+      rdo: [...document.querySelectorAll('#obra-select option')].some(o => o.value === id),
+      lista: window.obterCatalogoUnificadoObrasErp().some(o => o.nome === 'QA Obra Engenharia'),
+    }), obraDb[0].id);
+    check(seletores.lista, 'depois de recarregar, a obra continua na lista de obras (não some)');
+    check(seletores.rdo, 'a obra aparece no seletor obrigatório do RDO');
+    await pm2.evaluate(() => window.navegarParaSecao('frequencia'));
+    await pm2.waitForTimeout(1500);
+    const freq = await pm2.evaluate(() => { const sels = [...document.querySelectorAll('.sel-destino-ponto')]; return { linhas: sels.length, comObra: sels.length > 0 && sels.every(s => [...s.options].some(o => o.textContent.includes('QA Obra Engenharia'))), outras: [...new Set(sels.flatMap(s => [...s.options].map(o => o.value)).filter(v => v.startsWith('OBRA:')))].length }; });
+    check(freq.linhas > 0 && freq.comObra, 'Frequência: a obra aparece como destino em todas as linhas de funcionário (' + freq.linhas + ' linha(s))');
+    check(freq.outras === 1, 'Frequência: só lista obras do servidor (sem obras locais/fictícias): ' + freq.outras + ' obra(s)');
+    await pm2.evaluate(() => window.MartinsCadastrosServidor.abrir('despesas'));
+    await pm2.waitForFunction(() => /Despesas:/.test(document.querySelector('[data-cs=status]')?.textContent || ''));
+    await pm2.click('#cs-painel button:text-is("+ Novo")');
+    check((await pm2.$$eval('#cs-obra_id option', os => os.map(o => o.textContent))).some(t => t.includes('QA Obra Engenharia')), 'a obra aparece para vincular em Despesa de obra');
+    await pm2.evaluate(() => window.MartinsCadastrosServidor.fechar());
+
     console.log('Financeiro');
     await pm2.evaluate(() => window.navegarParaSecao('financeiro'));
     await pm2.waitForFunction(() => { const sec = document.getElementById('financeiro-servidor'); return sec && sec.offsetParent !== null && sec.querySelectorAll('.fin-card').length === 3; }, null, { timeout: 15000 });

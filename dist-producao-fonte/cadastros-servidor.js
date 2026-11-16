@@ -218,6 +218,8 @@
         delete base.estado;
         await salvar(reg?.id || null, { ...base, ...d });
         mensagem('Salvo e confirmado pelo servidor.');
+        // As demais telas (obra, RDO, frequência…) usam os catálogos do formularios.js: atualiza para refletir o novo cadastro.
+        W.MartinsOperacional?.carregar?.().catch(() => {});
         await carregarAba();
       } catch (e) { erro.textContent = traduzir(e); enviar.disabled = !gravacao(); }
     });

@@ -208,6 +208,41 @@ async function novo(page, campos) {
     check(await pm2.evaluate(() => window.getColaboradoresDb().some(c => c.nome === 'Fulano de Teste')), 'a lista de funcionários do sistema passa a trazer o novo funcionário');
     check(await pm2.evaluate(() => [...document.querySelectorAll('#view-colaboradores table, #view-colaboradores [id*=quadro], #view-colaboradores tbody')].some(n => n.textContent.includes('Fulano de Teste'))), 'o nome aparece na tela de RH (tabela de funcionários)');
     check(pm2.erros.length === 0, 'nenhuma exceção JavaScript no fluxo F5 + RH' + (pm2.erros.length ? ': ' + pm2.erros.join(' | ') : ''));
+
+    console.log('Modal "Cadastrar Novo Colaborador" (RH/SST)');
+    await pm2.evaluate(() => { window.aprimorarInterfaceRhColaboradoresESst?.(); window.abrirModalEditarColaborador('NOVO'); });
+    await pm2.waitForSelector('#modal-editar-colaborador:not(.hidden) #edit-colab-salario');
+    const padroes = await pm2.evaluate(() => ['edit-colab-salario', 'edit-colab-admissao', 'edit-colab-aso-venc', 'edit-colab-cnh-validade', 'edit-colab-nr10-venc', 'edit-colab-nr18-venc', 'edit-colab-nr35-venc'].filter(id => document.getElementById(id)?.value));
+    check(padroes.length === 0, 'colaborador novo não vem com salário, admissão ou validades de ASO/CNH/NR inventados' + (padroes.length ? ': ' + padroes.join(', ') : ''));
+    const sobreposicoes = await pm2.evaluate(() => {
+      const campos = [...document.querySelectorAll('#modal-editar-colaborador input:not([type=hidden]), #modal-editar-colaborador select, #modal-editar-colaborador textarea')].filter(n => n.offsetParent);
+      const r = campos.map(n => [n.id, n.getBoundingClientRect()]);
+      const ruins = [];
+      for (let i = 0; i < r.length; i++) for (let j = i + 1; j < r.length; j++) {
+        const [a, A] = r[i], [b, B] = r[j];
+        if (A.left < B.right - 1 && B.left < A.right - 1 && A.top < B.bottom - 1 && B.top < A.bottom - 1) ruins.push(a + '×' + b);
+      }
+      const estreitos = r.filter(([id, R]) => /nr\d+-venc|aso|cnh/.test(id) && R.width < 120).map(([id]) => id);
+      return { ruins, estreitos };
+    });
+    if (process.env.E2E_PRINTS) await pm2.screenshot({ path: path.join(process.env.E2E_PRINTS, 'modal-novo-colaborador.png') });
+    check(sobreposicoes.ruins.length === 0, 'nenhum campo do modal invade outro' + (sobreposicoes.ruins.length ? ': ' + sobreposicoes.ruins.join(', ') : ''));
+    check(sobreposicoes.estreitos.length === 0, 'campos de data de ASO/CNH/NR têm largura legível' + (sobreposicoes.estreitos.length ? ': ' + sobreposicoes.estreitos.join(', ') : ''));
+    await pm2.fill('#edit-colab-nome', 'Beltrano SST'); await pm2.fill('#edit-colab-funcao', 'Eletricista');
+    await pm2.fill('#edit-colab-salario', '3100.50'); await pm2.fill('#edit-colab-pix', 'beltrano@exemplo.invalid'); await pm2.selectOption('#edit-colab-tipo-pix', 'Email');
+    await pm2.fill('#edit-colab-aso-venc', '2027-01-31'); await pm2.fill('#edit-colab-nr10-venc', '2026-12-15');
+    await pm2.$eval('#form-editar-colaborador', f => f.requestSubmit());
+    await pm2.waitForFunction(() => /Salvamento confirmado/.test(document.getElementById('producao-status')?.textContent || ''), null, { timeout: 15000 })
+      .catch(async e => { console.log('    status:', await pm2.$eval('#producao-status', n => n.textContent), '| toast:', await pm2.$eval('#toast-msg', n => n.textContent)); throw e; });
+    const criados = (await db.query(`SELECT id, dados FROM martins_producao_v1.registros WHERE modulo='funcionarios' AND dados->>'nome'='Beltrano SST'`)).rows;
+    check(criados.length === 1, 'cadastro pelo modal "Cadastrar Novo Colaborador" cria o funcionário (antes falhava com "Registro não encontrado")');
+    const d = criados[0]?.dados || {};
+    check(Number(d.salarioBase) === 3100.5 && d.chavePix === 'beltrano@exemplo.invalid' && d.tipoChavePix === 'Email' && d.asoValidade === '2027-01-31' && d.nr10Validade === '2026-12-15' && d.cnhValidade === null,
+      'salário, PIX, ASO e NR-10 são gravados no servidor; campo vazio fica vazio');
+    await pm2.evaluate(id => window.abrirModalEditarColaborador(id), criados[0].id);
+    await pm2.waitForTimeout(300);
+    check(await pm2.evaluate(() => document.getElementById('edit-colab-salario').value === '3100.5' || document.getElementById('edit-colab-salario').value === '3100.50') &&
+      await pm2.$eval('#edit-colab-aso-venc', n => n.value === '2027-01-31'), 'ao reabrir, os dados de RH/SST voltam do servidor');
   } finally {
     await browser.close();
     fs.rmSync(tmp, { recursive: true, force: true });

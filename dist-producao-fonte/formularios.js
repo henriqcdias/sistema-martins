@@ -156,11 +156,23 @@
  }
  function snapshot(form,id,m){const r=id&&registro(m,id);return form.dataset.revisaoProducao?Number(form.dataset.revisaoProducao):r?.revisao??0;}
  async function formularioFuncionario(form){
-  const ficha=form.id==='form-editar-ficha-colab-estab',editar=ficha||form.id==='form-editar-colaborador',p=ficha?'ficha-inp-':editar?'edit-colab-':'nc-',id=ficha?form.dataset.registroProducao:editar?val('edit-colab-id'):null;
-  const dados={nome:val(p+'nome'),cpf:val(p+'cpf'),rg:val(p+'rg'),funcao:val(p+'funcao'),vinculo:val(p+'vinculo'),dataAdmissao:val(p+'admissao'),status:ficha?(registro('funcionarios',id)?.dados.status||'Ativo'):editar?val('edit-colab-status'):'Ativo',obs:val(p+'obs'),obra_id:referencia('obras',val(p+'obra'),true)};
+  const ficha=form.id==='form-editar-ficha-colab-estab',p=ficha?'ficha-inp-':form.id==='form-editar-colaborador'?'edit-colab-':'nc-';
+  // O modal "Cadastrar Novo Colaborador" usa o id 'NOVO': isso é criação, não edição de um registro existente.
+  const idInformado=ficha?form.dataset.registroProducao:form.id==='form-editar-colaborador'?val('edit-colab-id'):null,id=uuid(idInformado)?idInformado:null,editar=!!id;
+  const dados={nome:val(p+'nome'),cpf:val(p+'cpf'),rg:val(p+'rg'),funcao:val(p+'funcao'),vinculo:val(p+'vinculo'),dataAdmissao:val(p+'admissao'),status:ficha?(registro('funcionarios',id)?.dados.status||'Ativo'):p==='edit-colab-'?(val('edit-colab-status')||'Ativo'):'Ativo',obs:val(p+'obs'),
+   // No modal de cadastro a obra é um campo oculto ("Rotativo": alocação dinâmica pela frequência); só um id real vira vínculo fixo.
+   obra_id:p==='edit-colab-'&&!uuid(val(p+'obra'))?null:referencia('obras',val(p+'obra'),true)};
   if(ficha&&el('ficha-inp-salario'))dados.salarioBase=num(val('ficha-inp-salario'));
+  if(p==='edit-colab-'){
+   // Campos do bloco RH/SST do modal: vazio fica null (limpa o valor anterior na edição).
+   const opcional=(chave,campo,conv=x=>x)=>{if(!el(campo))return;const v=val(campo);dados[chave]=v===''?null:conv(v);};
+   opcional('salarioBase','edit-colab-salario',num);opcional('tipoChavePix','edit-colab-tipo-pix');opcional('chavePix','edit-colab-pix');opcional('anexoDocumento','edit-colab-anexo-documento');
+   opcional('asoValidade','edit-colab-aso-venc');opcional('cnhValidade','edit-colab-cnh-validade');opcional('nr10Validade','edit-colab-nr10-venc');opcional('nr18Validade','edit-colab-nr18-venc');opcional('nr35Validade','edit-colab-nr35-venc');
+   opcional('dataEncerramento','edit-colab-encerramento');opcional('motivoEncerramento','edit-colab-motivo-encerramento');
+  }
   if(!dados.nome||!dados.funcao)throw Error('Informe nome e função do funcionário.');
   await enviar('funcionarios',dados,id,editar?snapshot(form,id,'funcionarios'):0);
+  if(form.id==='form-editar-colaborador')el('edit-colab-id').value='';
  }
  async function formularioObra(form){
   const editar=form.id==='form-gestao-obra',id=editar?(form.dataset.registroProducao||val('gestao-obra-select')):null,p=editar?'mo-':'nova-obra-';
@@ -245,7 +257,7 @@
   W.salvarNovoOrcamentoVendaForm=event=>{event?.preventDefault();return submeter(el('form-novo-orcamento-venda'));};
   W.salvarFrequenciaDiariaDoDia=()=>comDesbloqueio(frequencia).catch(x=>mensagem(x.message,true));
   W.salvarRdo=(status)=>{if(status&&status.toLowerCase()!=='rascunho'){mensagem('Aprovação e assinatura exigem contrato próprio. O RDO operacional é salvo como rascunho.',true);return;}return submeter(el('form-rdo'));};
-  const oldEdit=W.abrirModalEditarColaborador;W.abrirModalEditarColaborador=id=>{oldEdit?.(id);const r=registro('funcionarios',id);if(!r)return;const f=el('form-editar-colaborador');f.dataset.registroProducao=id;f.dataset.revisaoProducao=r.revisao;for(const [field,key]of [['nome','nome'],['cpf','cpf'],['rg','rg'],['funcao','funcao'],['vinculo','vinculo'],['admissao','dataAdmissao'],['status','status'],['obra','obra_id'],['obs','obs']])if(el('edit-colab-'+field))el('edit-colab-'+field).value=r.dados[key]||'';};
+  const oldEdit=W.abrirModalEditarColaborador;W.abrirModalEditarColaborador=id=>{oldEdit?.(id);const r=registro('funcionarios',id);if(!r)return;const f=el('form-editar-colaborador');f.dataset.registroProducao=id;f.dataset.revisaoProducao=r.revisao;for(const [field,key]of [['nome','nome'],['cpf','cpf'],['rg','rg'],['funcao','funcao'],['vinculo','vinculo'],['admissao','dataAdmissao'],['status','status'],['obra','obra_id'],['obs','obs'],['salario','salarioBase'],['tipo-pix','tipoChavePix'],['pix','chavePix'],['anexo-documento','anexoDocumento'],['aso-venc','asoValidade'],['cnh-validade','cnhValidade'],['nr10-venc','nr10Validade'],['nr18-venc','nr18Validade'],['nr35-venc','nr35Validade'],['encerramento','dataEncerramento'],['motivo-encerramento','motivoEncerramento']])if(el('edit-colab-'+field))el('edit-colab-'+field).value=r.dados[key]??'';};
   const oldFicha=W.abrirFichaColaborador;W.abrirFichaColaborador=id=>{
     oldFicha?.(id);const r=registro('funcionarios',id),f=el('form-editar-ficha-colab-estab');if(!r||!f)return;f.dataset.registroProducao=id;f.dataset.revisaoProducao=r.revisao;
     for(const [field,key]of [['nome','nome'],['cpf','cpf'],['funcao','funcao'],['admissao','dataAdmissao'],['salario','salarioBase']])if(el('ficha-inp-'+field))el('ficha-inp-'+field).value=r.dados[key]??'';

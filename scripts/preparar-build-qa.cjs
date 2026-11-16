@@ -48,7 +48,7 @@ try {
     }) + ');\n', {flag:'wx'});
   const swTemplate = fs.readFileSync(path.join(__dirname, 'sw-producao.js'), 'utf8');
   const hash = crypto.createHash('sha256');
-  for (const f of ['index.html','dist/app-martins.min.js','producao-config.js','auth-v5.js','auth-ui-v5.js','cliente.js','formularios.js', 'cadastros-servidor.js']) {
+  for (const f of ['index.html','dist/app-martins.min.js','producao-config.js','auth-v5.js','auth-ui-v5.js','cliente.js','formularios.js', 'cadastros-servidor.js', 'painel-servidor.js']) {
     hash.update(f); hash.update(fs.readFileSync(path.join(tmp,f)));
   }
   fs.writeFileSync(path.join(tmp,'sw.js'), swTemplate.replace('__REVISAO__', hash.digest('hex').slice(0,16)).replace('martins-erp-prod-', 'martins-erp-qa-'));

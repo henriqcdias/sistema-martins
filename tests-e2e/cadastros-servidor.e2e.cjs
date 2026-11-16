@@ -84,6 +84,7 @@ async function entrar(browser, dir, db, email, viewport = { width: 1366, height:
   await page.goto(APP + '/', { waitUntil: 'networkidle' });
   // Espera a restauração de sessão do carregamento terminar, como acontece com um usuário real.
   if (!rapido) await page.waitForTimeout(1500);
+  page.rotuloAntesDoLogin = await page.evaluate(() => { const b = document.getElementById('barra-sessao-auditoria'); return b && getComputedStyle(b).display !== 'none' ? document.getElementById('audit-session-text').textContent : ''; });
   await page.fill('#gate-usuario-input', email);
   await page.fill('#gate-senha-input', 'senha-sintetica');
   await page.click('#btn-entrar-gate');
@@ -228,6 +229,7 @@ async function novo(page, campos) {
     await pm2.waitForFunction(() => /Salvamento confirmado/.test(document.getElementById('producao-status')?.textContent || ''), null, { timeout: 15000 })
       .catch(async e => { console.log('    status:', await pm2.$eval('#producao-status', n => n.textContent)); throw e; });
     const obraDb = (await db.query(`SELECT id, dados FROM martins_producao_v1.registros WHERE modulo='obras' AND dados->>'nome'='QA Obra Engenharia'`)).rows;
+    check(/^OBR-[0-9A-F]{8}$/.test(obraDb[0]?.dados.codigo || ''), 'obra nova recebe código único (OBR-…), não o contador local "1"');
     check(obraDb.length === 1 && Number(obraDb[0].dados.valorContratado) === 250000 && obraDb[0].dados.clienteResponsavel === 'Cliente A' && obraDb[0].dados.cliente_id,
       'obra da Engenharia é gravada no servidor com cliente e valor (antes ficava só no navegador)');
     await pm2.reload({ waitUntil: 'networkidle' });
@@ -292,6 +294,28 @@ async function novo(page, campos) {
     check(bloqueio.antes === 'CADASTRO_NO_SERVIDOR' && bloqueio.depois === 'CADASTRO_NO_SERVIDOR', 'função legada de cadastro continua bloqueada mesmo se o código tentar redefini-la');
     check(!bloqueio.painel, 'chamada automática (sem ação da pessoa) é recusada em silêncio, sem abrir o painel');
     check((await semRastroLocal(pm2, 'Vendedor Local')).length === 0, 'nenhum vendedor local é gravado');
+
+    console.log('Relatório de homologação — rodada 2');
+    check(pm2.rotuloAntesDoLogin === '', '03: tela de login não mostra identidade de sessão antes da confirmação');
+    check(await pm2.$eval('#audit-session-text', n => n.textContent.startsWith('master@teste.invalid')), '03: após o login, o rótulo mostra a identidade real da sessão');
+    await pm2.evaluate(() => window.navegarParaSecao?.('painel'));
+    await pm2.evaluate(() => window.renderizarDashboardExecutivo());
+    await pm2.waitForFunction(() => document.querySelectorAll('#dash-servidor .ds-card').length >= 4 && !/Carregando/.test(document.getElementById('dash-servidor').textContent), null, { timeout: 15000 });
+    if (process.env.E2E_PRINTS) await pm2.screenshot({ path: path.join(process.env.E2E_PRINTS, 'painel.png') });
+    const dash = await pm2.evaluate(() => { const t = document.getElementById('view-painel').textContent; const card = [...document.querySelectorAll('#dash-servidor .ds-card')].find(c => /Obras em andamento/.test(c.textContent)); return { t, obras: card?.querySelector('strong')?.textContent }; });
+    const obrasServidor = (await db.query(`SELECT count(DISTINCT id)::int n FROM martins_producao_v1.registros WHERE modulo='obras'`)).rows[0].n;
+    check(dash.obras === String(obrasServidor), '39: painel conta as obras do servidor por id (' + dash.obras + ' = ' + obrasServidor + ')');
+    check(await pm2.evaluate(() => /Perfil: Master/.test(document.body.innerText)), 'barra de contexto mostra o perfil real (Master)');
+    check(!/30 Obras|Henrique Camilo|142\.850|184\.500|152\.770|Média física: 59%/.test(dash.t) && /Olá, Master Teste/.test(dash.t), '39: painel sem números de demonstração e com o nome real do usuário');
+    const textoPagina = await pm2.evaluate(() => document.body.innerText);
+    check(!/100% Sincronizado|Local \(Aguardando Servidor\)/.test(textoPagina) && await pm2.$eval('#btn-sync-nuvem', n => /Servidor/.test(n.textContent)), '04: um único indicador de sincronização, coerente ("Servidor")');
+    const baixar = async pg => { const [d] = await Promise.all([pg.waitForEvent('download'), pg.evaluate(() => window.gerarRelatorioFinanceiroCsv())]); return fs.readFileSync(await d.path(), 'utf8'); };
+    const csvM = await baixar(pm2);
+    const linhasM = csvM.replace(/^\ufeff/, '').split('\r\n'); const corpoM = linhasM.slice(linhasM.findIndex(l => l.startsWith('Competência')) + 1);
+    const despServ = (await db.query(`SELECT count(*)::int n, sum((dados->>'valor_centavos')::bigint)::bigint t FROM martins_producao_v1.registros WHERE modulo='despesas'`)).rows[0];
+    check(corpoM.length === despServ.n && csvM.includes('Linhas;' + despServ.n) && corpoM.some(l => l.includes('sigilosos')), '40: CSV do Master tem todas as despesas do servidor (' + corpoM.length + ' linhas), inclusive a confidencial');
+    const csvL = await baixar(pl);
+    check(!csvL.includes('sigilosos') && !csvL.includes('Confidencial') && csvL.includes('Material de escritório'), '40: CSV do lançador traz só as próprias despesas, sem a confidencial e sem a coluna');
 
     console.log('Financeiro');
     await pm2.evaluate(() => window.navegarParaSecao('financeiro'));

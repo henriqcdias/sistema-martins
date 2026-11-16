@@ -63,6 +63,9 @@
     body:not([data-sessao-producao="ativa"]) #tela-login-gate { display:flex!important;visibility:visible!important }
     body[data-sessao-producao="ativa"] #tela-login-gate { display:none!important }
     #view-usuarios, #nav-btn-usuarios, #drawer-item-grp-12-configuracoes-config-usuarios-permissoes,
+    /* Identidade só aparece depois de a sessão ser confirmada; integração fictícia com planilha removida. */
+    body:not([data-sessao-producao="ativa"]) #barra-sessao-auditoria { display:none!important }
+    #modal-sync-nuvem div:has(> #input-webhook-nuvem) { display:none!important }
     #drawer-sec-usuarios, #view-financeiro > :not(#financeiro-servidor), #btn-desbloquear-edicao-qa { display:none!important }
     body #drawer-menu-lateral { z-index: 10000; }
     body #btn-desbloquear-edicao-qa { position: fixed; bottom: calc(6.5rem + env(safe-area-inset-bottom, 0px)); right: 12px; z-index: 10001; min-height: 44px; }
@@ -213,11 +216,11 @@
   </div>
 
   <!-- AUDIT NOTIFICATION BAR -->
-  <div class="bg-slate-800 text-slate-300 text-[11px] py-1 px-4 border-b border-slate-700 flex items-center justify-between no-print">
+  <div id="barra-sessao-auditoria" class="bg-slate-800 text-slate-300 text-[11px] py-1 px-4 border-b border-slate-700 flex items-center justify-between no-print">
     <div class="max-w-7xl mx-auto w-full flex items-center justify-between">
       <div class="flex items-center space-x-2 truncate">
         <span class="inline-block w-2 h-2 rounded-full bg-emerald-400"></span>
-        <span>Sessão Autenticada: <strong id="audit-session-text" class="text-white font-semibold">henrique@usuarios.invalid (Master)</strong></span>
+        <span>Sessão Autenticada: <strong id="audit-session-text" class="text-white font-semibold"></strong></span>
         <span class="text-slate-500">|</span>
         <span class="text-slate-400 hidden sm:inline">Todas as ações são registradas com data, hora e login do autor</span>
       </div>
@@ -19176,7 +19179,7 @@ Envio oficial emitido pelo sistema Construtora Martins.`;
         document.getElementById("obra-inp-nome").value = nomeObra;
         document.getElementById("obra-inp-tipo").value = o.tipo || "Construção";
         document.getElementById("obra-inp-status").value = o.status || "Em andamento";
-        document.getElementById("obra-inp-codigo").value = o.codigo || "1";
+        document.getElementById("obra-inp-codigo").value = o.codigo || "";
         document.getElementById("obra-inp-area").value = o.areaM2 || 485.50;
         document.getElementById("obra-inp-unidade").value = o.unidade || "m²";
         document.getElementById("obra-inp-art").value = o.art || "";
@@ -19206,7 +19209,8 @@ Envio oficial emitido pelo sistema Construtora Martins.`;
         document.getElementById("obra-inp-nome").value = "";
         document.getElementById("obra-inp-tipo").value = "Construção";
         document.getElementById("obra-inp-status").value = "Em andamento";
-        document.getElementById("obra-inp-codigo").value = String(Object.keys(dadosObras).length + 1);
+        // Código de obra nova é gerado no salvamento (único na empresa), não por contador local.
+        document.getElementById("obra-inp-codigo").value = "";
         document.getElementById("obra-inp-area").value = "";
         document.getElementById("obra-inp-unidade").value = "m²";
         document.getElementById("obra-inp-art").value = "";
@@ -21567,10 +21571,10 @@ Favor cotar e providenciar entrega no canteiro.`;
       <div class="bg-slate-50 p-3.5 rounded-xl border border-slate-200 space-y-2">
         <div class="flex items-center justify-between text-xs font-bold text-slate-800">
           <span>Status do Armazenamento:</span>
-          <span class="bg-emerald-100 text-emerald-900 border border-emerald-300 px-2 py-0.5 rounded-full font-black text-[10px]">🟢 100% Sincronizado</span>
+          <span id="status-servidor-modal" class="bg-emerald-100 text-emerald-900 border border-emerald-300 px-2 py-0.5 rounded-full font-black text-[10px]">Servidor confirma cada gravação</span>
         </div>
         <p class="text-[11px] text-slate-600 leading-relaxed">
-          Todos os registros da <strong>Construtora & Incorporadora Martins</strong> (RDOs, diários, equipes nominais, fotos comprimidas, suprimentos e medições) estão ativos e salvos com redundância na nuvem.
+          Funcionários, obras, RDO, frequência, orçamentos, cadastros e despesas são gravados no servidor e confirmados a cada operação. Estoque, compras, frota e os demais lançamentos operacionais ainda ficam apenas neste navegador até serem ligados ao servidor.
         </p>
       </div>
 
@@ -22976,7 +22980,7 @@ Favor cotar e providenciar entrega no canteiro.`;
               <div class="grid grid-cols-2 gap-2">
                 <div>
                   <label class="block font-bold text-slate-600 mb-0.5">Código da obra</label>
-                  <input type="text" id="obra-inp-codigo" placeholder="1" class="w-full bg-slate-50 border border-slate-300 rounded-lg p-2 font-mono">
+                  <input type="text" id="obra-inp-codigo" placeholder="Automático ao salvar (OBR-…)" class="w-full bg-slate-50 border border-slate-300 rounded-lg p-2 font-mono">
                 </div>
                 <div>
                   <label class="block font-bold text-slate-600 mb-0.5">Área total</label>
@@ -23559,7 +23563,8 @@ Favor cotar e providenciar entrega no canteiro.`;
   <script src="auth-v5.js?v=producao-v5-integrada-3"></script>
   <script src="cliente.js"></script>
   <script src="formularios.js?v=producao-v5-integrada-3"></script>
-<script src="cadastros-servidor.js?v=v2-1"></script>
+<script src="cadastros-servidor.js?v=v3-1"></script>
+<script src="painel-servidor.js?v=1"></script>
   <script src="auth-ui-v5.js"></script>
 </body>
 </html>

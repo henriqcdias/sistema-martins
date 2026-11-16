@@ -21,7 +21,7 @@
     const info = D.createElement('span');
     info.className = 'ml-3';
     if (vinculo) {
-      info.textContent = 'Empresa: ' + (vinculo.nomeEmpresa || empresaId) + ' · Perfil: ' + (vinculo.papel || vinculo.papelServidor || 'Operacional');
+      info.textContent = 'Empresa: ' + (vinculo.nomeEmpresa || empresaId) + ' · Perfil: ' + ({ master: 'Master', administrador: 'Administrador', operacional: 'Operacional' }[vinculo.papelServidor] || 'Operacional');
     } else {
       info.textContent = 'Selecione uma empresa autorizada no cabeçalho.';
     }
@@ -59,12 +59,14 @@
   for(const f of D.querySelectorAll('#form-novo-orcamento-venda'))if(!el('orc-inp-obra')){const label=D.createElement('label');label.textContent='Obra vinculada (opcional)';const select=D.createElement('select');select.id='orc-inp-obra';select.className='w-full border rounded p-2';label.append(select);f.prepend(label);}
   for(const s of D.querySelectorAll('.sel-trab-cadastrado')){const item=typeof currentTrabalhadores!=='undefined'?currentTrabalhadores[Number(s.dataset.index)]:null;preencherSelect(s,catalogos.funcionarios,'Selecione o funcionário');if(item?.funcionario_id&&catalogos.funcionarios.some(x=>x.id===item.funcionario_id))s.value=item.funcionario_id;}
 
-  for(const id of ['obra-select','gestao-obra-select','nc-obra','edit-colab-obra','filtro-obra-hist','orc-inp-obra','atividade-obra-select','ficha-inp-obra']){const s=el(id);if(s?.tagName==='SELECT'){preencherSelect(s,catalogos.obras,id==='filtro-obra-hist'?'Todas as obras':'Selecione a obra');if(id==='filtro-obra-hist'&&s.options[0])s.options[0].value='todas';}}
+  const semObras='Nenhuma obra cadastrada nesta empresa — cadastre em Gestão de Obras';
+  for(const id of ['obra-select','gestao-obra-select','nc-obra','edit-colab-obra','filtro-obra-hist','orc-inp-obra','atividade-obra-select','ficha-inp-obra']){const s=el(id);if(s?.tagName==='SELECT'){preencherSelect(s,catalogos.obras,id==='filtro-obra-hist'?'Todas as obras':(catalogos.obras.length?'Selecione a obra':semObras));if(id==='filtro-obra-hist'&&s.options[0])s.options[0].value='todas';}}
   if(el('obra-inp-cliente-select')?.tagName==='SELECT'&&Array.isArray(catalogos.clientes))preencherSelect(el('obra-inp-cliente-select'),catalogos.clientes,'Selecione o cliente (cadastro compartilhado)');
   for(const id of ['select-add-trabalhador','colab-select','rf-colab-select','rel-colab-select'])if(el(id)?.tagName==='SELECT')preencherSelect(el(id),catalogos.funcionarios,'Selecione o funcionário');
   for(const s of D.querySelectorAll('.sel-destino-ponto')){
    const key=JSON.stringify(catalogos.obras);if(s.dataset.catalogoProducao===key)continue;const prev=s.value;
    s.replaceChildren(new Option('Selecione destino ou situação',''));
+   if(!catalogos.obras.length){const o=new Option('(nenhuma obra cadastrada — cadastre em Gestão de Obras)','');o.disabled=true;s.add(o);}
    for(const x of catalogos.obras)s.add(new Option(x.nome,'OBRA:'+x.id));
    for(const [id,nome] of [['falta','Falta'],['folga','Folga'],['ferias','Férias'],['atestado','Atestado']])s.add(new Option(nome,'STATUS:'+id));
    s.dataset.catalogoProducao=key;if([...s.options].some(o=>o.value===prev))s.value=prev;
@@ -229,6 +231,8 @@
   await enviar('orcamentos',{nome:'Orçamento · '+cliente,cliente,itens:itensOrcamento(),condicoes:val('orc-inp-condicoes'),prazo:val('orc-inp-prazo'),obra_id:referencia('obras',val('orc-inp-obra'),true),status:registro('orcamentos',id)?.dados.status||'Em Orçamento',data:registro('orcamentos',id)?.dados.data||hoje()},id,id?snapshot(form,id,'orcamentos'):0);W.currentEditingOrcamentoId=null;
  }
  function resumo(){
+  // O painel inicial vem do servidor (painel-servidor.js); o resumo antigo fica só como reserva.
+  if(W.MartinsPainelServidor){W.MartinsPainelServidor.renderizarPainel();return;}
   const painel=el('view-painel');if(!painel)return;el('resumo-producao')?.remove();const sec=D.createElement('section');sec.id='resumo-producao';sec.className='space-y-4';
   const h=D.createElement('h2');h.className='text-xl font-bold';h.textContent='Operação · '+(contexto()?.vinculos.find(x=>x.empresa_id===empresa)?.nomeEmpresa||'Selecione a empresa');sec.append(h);
   const cards=D.createElement('div');cards.className='grid grid-cols-2 md:grid-cols-5 gap-3';for(const m of ['funcionarios','obras','rdos','frequencia','orcamentos']){const c=D.createElement('div');c.className='bg-white border rounded-xl p-4';c.textContent=m+': '+dados[m].size;cards.append(c);}sec.append(cards);

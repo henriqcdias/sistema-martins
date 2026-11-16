@@ -282,9 +282,10 @@
     const calcular = async () => {
       try {
         const t = await W.MartinsProducaoRpc.despesasTotais({ e: empresa, de: ini.value, ate: fim.value });
-        saida.replaceChildren(el('strong', { texto: 'Total do período: ' + reais(t.total_centavos) }),
+        // replaceChildren(null) escreveria o texto "null": só entram nós reais.
+        saida.replaceChildren(...[el('strong', { texto: 'Total do período: ' + reais(t.total_centavos) }),
           ...t.por_centro_custo.map(c => el('div', { texto: (rotuloRef('centros_custo', c.centro_custo_id) || 'Centro inativo') + ': ' + reais(c.total_centavos) })),
-          t.confidenciais_centavos !== null && Number(t.confidenciais_centavos) > 0 ? el('div', { texto: 'Despesas confidenciais (agregadas): ' + reais(t.confidenciais_centavos) }) : null);
+          t.confidenciais_centavos !== null && Number(t.confidenciais_centavos) > 0 ? el('div', { texto: 'Despesas confidenciais (agregadas): ' + reais(t.confidenciais_centavos) }) : null].filter(Boolean));
       } catch (e) { saida.replaceChildren(el('span', { classe: 'cs-erro', texto: traduzir(e) })); }
     };
     alvo.append(el('section', { classe: 'cs-totais' }, el('h4', { texto: 'Totais por centro de custo' }),
@@ -295,7 +296,8 @@
     const corpo = painel.querySelector('[data-cs=corpo]');
     const busca = el('input', { type: 'search', placeholder: 'Pesquisar…', 'aria-label': 'Pesquisar ' + def.titulo });
     const topo = el('div', { classe: 'cs-acoes' }, busca,
-      pode(aba, 'criar') ? el('button', { type: 'button', classe: 'cs-primario', texto: '+ Novo', onclick: () => abrirFormulario(null) }) : null);
+      pode(aba, 'criar') ? el('button', { type: 'button', classe: 'cs-primario', texto: '+ Novo', onclick: () => abrirFormulario(null) }) : null,
+      aba === 'despesas' && W.MartinsPainelServidor ? el('button', { type: 'button', classe: 'cs-secundario', texto: 'Exportar CSV', onclick: () => W.MartinsPainelServidor.exportarDespesasCsv().catch(e => mensagem(traduzir(e), true)) }) : null);
     const tabela = el('table', { classe: 'cs-tabela' });
     tabela.append(el('thead', {}, el('tr', {}, def.colunas.map(c => el('th', { texto: (def.campos.find(x => x[0] === c)?.[1] || c).replace(/ \(.+\)$/, '') })), aba === 'despesas' ? null : el('th', { texto: 'Situação' }))));
     const tbody = el('tbody');

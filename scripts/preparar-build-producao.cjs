@@ -33,7 +33,7 @@ try {
     const modeloWorker = fs.readFileSync(path.join(__dirname, 'sw-producao.js'), 'utf8');
     revisao.update(modeloWorker);
     for (const recurso of ['index.html', 'dist/app-martins.min.js', 'producao-config.js',
-      'auth-v5.js', 'auth-ui-v5.js', 'cliente.js', 'formularios.js', 'cadastros-servidor.js']) {
+      'auth-v5.js', 'auth-ui-v5.js', 'cliente.js', 'formularios.js', 'cadastros-servidor.js', 'painel-servidor.js']) {
       revisao.update(recurso);
       revisao.update(fs.readFileSync(path.join(temporario, recurso)));
     }

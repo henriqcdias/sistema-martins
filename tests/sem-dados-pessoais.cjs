@@ -10,7 +10,7 @@ const raiz = path.join(__dirname, '..');
 const ARQUIVOS = [
   'dist-producao-fonte/index.html', 'dist-producao-fonte/dist/app-martins.min.js',
   'dist-producao-fonte/auth-v5.js', 'dist-producao-fonte/auth-ui-v5.js',
-  'dist-producao-fonte/formularios.js', 'dist-producao-fonte/cliente.js', 'dist-producao-fonte/cadastros-servidor.js',
+  'dist-producao-fonte/formularios.js', 'dist-producao-fonte/cliente.js', 'dist-producao-fonte/cadastros-servidor.js', 'dist-producao-fonte/painel-servidor.js',
   'dist/index.html', 'dist/dist/app-martins.min.js',
 ];
 const PROVEDORES_PESSOAIS = /@(?:gmail|googlemail|hotmail|outlook|live|yahoo|icloud|uol|bol|terra|ig)\.[a-z.]+\b/i;
@@ -36,8 +36,10 @@ test('Código publicado não define senhas padrão nem grava senha local', () =>
 });
 
 test('Tela de cadastros não insere HTML vindo do servidor (sem innerHTML/insertAdjacentHTML)', () => {
-  const t = fs.readFileSync(path.join(raiz, 'dist-producao-fonte/cadastros-servidor.js'), 'utf8');
-  a.equal(/innerHTML|outerHTML|insertAdjacentHTML|document\.write/.test(t), false);
+  for (const f of ['cadastros-servidor.js', 'painel-servidor.js']) {
+    const t = fs.readFileSync(path.join(raiz, 'dist-producao-fonte', f), 'utf8');
+    a.equal(/innerHTML|outerHTML|insertAdjacentHTML|document\.write|\balert\(/.test(t), false, f);
+  }
 });
 
 test('Auditoria não traz ações fictícias atribuídas a pessoas reais', () => {

@@ -29,7 +29,7 @@ async function banco() {
     CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$ SELECT nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;`);
   await db.exec(sql('supabase/producao/base/estrutura_anterior_as_migracoes.sql'));
   await db.exec(`INSERT INTO public.martins_empresas(id, razao_social) VALUES ('${E}', 'Construtora Martins - cadastro inicial');`);
-  for (const d of ['supabase/producao/migrations', 'supabase/v2/migrations', 'supabase/v3/migrations', 'supabase/v4/migrations', 'supabase/v5/migrations', 'supabase/v6/migrations', 'supabase/v7/migrations', 'supabase/v8/migrations'])
+  for (const d of ['supabase/producao/migrations', 'supabase/v2/migrations', 'supabase/v3/migrations', 'supabase/v4/migrations', 'supabase/v5/migrations', 'supabase/v6/migrations', 'supabase/v7/migrations', 'supabase/v8/migrations', 'supabase/v9/migrations'])
     for (const f of fs.readdirSync(path.join(raiz, d)).sort()) await db.exec(sql(d + '/' + f));
   const [M, L] = Object.values(USUARIOS);
   await db.exec(`INSERT INTO auth.users VALUES ('${M}','master@teste.invalid'),('${L}','lancador@teste.invalid');
@@ -39,7 +39,7 @@ async function banco() {
   return db;
 }
 
-const TIPOS = { e: 'uuid', r: 'uuid', apos: 'uuid', op: 'uuid', v: 'bigint', limite: 'integer', d: 'jsonb', itens: 'jsonb', de: 'date', ate: 'date', m: 'text', estado: 'text', motivo: 'text', tipo: 'text', produto: 'uuid', origem: 'uuid', requisicao: 'uuid', destino: 'uuid', qtd: 'bigint', ref: 'uuid', pedido: 'uuid', deposito: 'uuid', documento: 'jsonb', obra: 'uuid', rdo: 'uuid', consumo: 'uuid' };
+const TIPOS = { e: 'uuid', r: 'uuid', apos: 'uuid', op: 'uuid', v: 'bigint', limite: 'integer', d: 'jsonb', itens: 'jsonb', de: 'date', ate: 'date', m: 'text', estado: 'text', motivo: 'text', tipo: 'text', produto: 'uuid', origem: 'uuid', requisicao: 'uuid', usuario: 'uuid', ativo: 'boolean', email: 'text', nome: 'text', destino: 'uuid', qtd: 'bigint', ref: 'uuid', pedido: 'uuid', deposito: 'uuid', documento: 'jsonb', obra: 'uuid', rdo: 'uuid', consumo: 'uuid' };
 async function supabase(db, route) {
   const req = route.request(), url = new URL(req.url());
   const json = (status, body) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
@@ -575,6 +575,37 @@ async function novo(page, campos) {
     await pm2.waitForSelector('[data-rq=lista] tbody tr:has-text("Entregue")');
     check(await saldoA() === antesReq - 3000 && (await db.query(`SELECT count(*)::int n FROM martins_producao_v1.registros WHERE modulo='estoque_movimentos' AND dados->>'requisicao_id'=$1`, [rqs[0].id])).rows[0].n === 2, 'entrega do restante conclui: 3 baixados em 2 consumos ligados à requisição');
     check(await semRastroLocal(pm2, 'Liberado QA-REQ-8').then(x => x.length === 0), 'nada da requisição fica no navegador');
+    await pm2.evaluate(() => window.MartinsCadastrosServidor.fechar());
+
+    console.log('Usuários e permissões (v9)');
+    const NOVO_UID = '00000000-0000-4000-8000-0000000000a9';
+    await db.query(`INSERT INTO auth.users VALUES ($1,'almox.e2e@teste.invalid')`, [NOVO_UID]);
+    await pm2.evaluate(() => window.MartinsCadastrosServidor.abrir('usuarios'));
+    await pm2.waitForSelector('#us-email', { timeout: 15000 });
+    check(await pm2.$$eval('#cs-painel tbody tr', t => t.some(r => /master@teste\.invalid/.test(r.textContent))), 'o Master vê as pessoas vinculadas à empresa, com e-mail');
+    await pm2.fill('#us-email', 'ninguem@teste.invalid'); await pm2.click('#cs-painel button:text-is("Vincular à empresa")');
+    await erroVisivel(/Conta não encontrada no Supabase Auth/);
+    check(true, 'e-mail que não existe no Auth é recusado com orientação clara');
+    await pm2.fill('#us-email', 'ALMOX.e2e@teste.invalid'); await pm2.fill('#us-nome', 'Almoxarife QA'); await pm2.click('#cs-painel button:text-is("Vincular à empresa")');
+    await pm2.waitForSelector('#cs-painel tbody tr:has-text("Almoxarife QA")');
+    check((await db.query(`SELECT papel, ativo FROM public.martins_online_acessos WHERE usuario_id=$1`, [NOVO_UID])).rows[0].papel === 'operacional', 'a conta é vinculada como operacional (nunca Master)');
+    check(await pm2.$eval('#cs-painel tbody tr:has-text("Almoxarife QA")', r => /Nenhum módulo/.test(r.textContent)), 'o vínculo novo aparece sem acesso a nenhum módulo');
+    await pm2.click('#cs-painel tbody tr:has-text("Almoxarife QA") button:text-is("Permissões")');
+    await pm2.waitForSelector('#us-modelo');
+    await pm2.selectOption('#us-modelo', 'Almoxarife');
+    check(await pm2.$eval('input[aria-label="Criar Estoque (movimentações)"]', n => n.checked) && !(await pm2.$eval('input[aria-label="Ver Despesas (financeiro)"]', n => n.checked)), 'o modelo "Almoxarife" preenche a tela (estoque sim, financeiro não)');
+    await pm2.click('input[aria-label="Criar Estoque (movimentações)"]'); await pm2.click('input[aria-label="Criar Estoque (movimentações)"]');
+    await pm2.uncheck('input[aria-label="Ver Obras"]');
+    check(!(await pm2.$eval('input[aria-label="Editar Obras"]', n => n.checked)), 'tirar "Ver" também tira criar e editar');
+    await pm2.click('#cs-painel button:text-is("Salvar permissões")');
+    await pm2.waitForSelector('#cs-painel tbody tr:has-text("Almoxarife QA"):has-text("módulo(s)")');
+    const pp = Object.fromEntries((await db.query(`SELECT modulo, ler, criar, editar FROM martins_producao_v1.permissoes WHERE usuario_id=$1`, [NOVO_UID])).rows.map(r => [r.modulo, r]));
+    check(pp.estoque_movimentos?.criar === true && pp.estoque_movimentos?.editar === true && !pp.despesas && !pp.obras && pp.rdos?.ler === true, 'permissões gravadas no servidor conforme a tela (estoque sim; despesas e obras não)');
+    check((await db.query(`SELECT count(*)::int n FROM martins_producao_v1.auditoria WHERE modulo='permissoes' AND registro_id=$1`, [NOVO_UID])).rows[0].n === 2, 'vínculo e permissões deixaram trilha de auditoria');
+    await pm2.click('#cs-painel tbody tr:has-text("Almoxarife QA") button:text-is("Desativar")');
+    await pm2.waitForSelector('#cs-painel tbody tr:has-text("Almoxarife QA"):has-text("Desativado")');
+    check((await db.query(`SELECT ativo FROM public.martins_online_acessos WHERE usuario_id=$1`, [NOVO_UID])).rows[0].ativo === false, 'o Master desativa o acesso e o servidor registra');
+    check(await pm2.$$eval('#cs-painel tbody tr', t => !/Desativar|Reativar/.test((t.find(r => /master@teste\.invalid/.test(r.textContent)) || { textContent: '' }).textContent)), 'o Master não vê botão para desativar o próprio acesso');
     await pm2.evaluate(() => window.MartinsCadastrosServidor.fechar());
 
     console.log('Rodada 4: ficha, histórico, busca e mensagens');

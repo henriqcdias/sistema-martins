@@ -64,6 +64,7 @@
     estoque: { titulo: 'Estoque', colunas: [], campos: [] },
     compras: { titulo: 'Compras', colunas: [], campos: [] },
     requisicoes: { titulo: 'Requisições de material', colunas: [], campos: [] },
+    usuarios: { titulo: 'Usuários e permissões', colunas: [], campos: [] },
     epis: { titulo: 'EPIs e uniformes', colunas: ['codigo', 'nome', 'tamanho', 'estoque_minimo'], campos: [
       ['nome', 'Descrição', 'texto', { obrigatorio: true }], ['codigo', 'Código de referência', 'texto'], ['categoria', 'Categoria', 'texto'],
       ['tamanho', 'Tamanho / numeração', 'texto'], ['preco_centavos', 'Preço unitário de custo (R$)', 'dinheiro'], ['estoque_minimo', 'Estoque mínimo para alerta', 'numero']] },
@@ -109,7 +110,7 @@
   };
   const contexto = () => W.obterContextoSegurancaAutenticadoWork?.() || null;
   const vinculo = () => contexto()?.vinculos?.find(v => v.empresa_id === empresa) || null;
-  const pode = (m, a) => vinculo()?.permissoes?.[m === 'estoque' ? 'estoque_movimentos' : m === 'compras' ? 'pedidos_compra' : m === 'requisicoes' ? 'requisicoes_material' : m]?.[a] === true;
+  const pode = (m, a) => m === 'usuarios' ? master() : vinculo()?.permissoes?.[m === 'estoque' ? 'estoque_movimentos' : m === 'compras' ? 'pedidos_compra' : m === 'requisicoes' ? 'requisicoes_material' : m]?.[a] === true;
   const master = () => vinculo()?.papelServidor === 'master';
   const gravacao = () => W.gravacaoHabilitadaWork?.() === true;
   const reais = c => (Number(c) / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -169,6 +170,7 @@
     if (aba === 'estoque') return carregarEstoque();
     if (aba === 'compras') return carregarCompras();
     if (aba === 'requisicoes') return carregarRequisicoes();
+    if (aba === 'usuarios') return carregarUsuarios();
     const linhas = await listarTodos(aba);
     registros = new Map(linhas.map(r => [r.id, r]));
     desenhar();
@@ -536,6 +538,75 @@
         el('p', { classe: 'cs-aviso', texto: 'Ao confirmar: o material sai do depósito da requisição e vira consumo da obra, na mesma operação. Não é possível entregar mais que o pedido nem mais que o saldo.' })));
     }
   }
+  // ---------- Usuários e permissões (v9): somente Master ----------
+  const ROTULO_MOD = { funcionarios: 'Funcionários (RH)', obras: 'Obras', planejamento: 'Planejamento', rdos: 'RDO (diário de obra)', frequencia: 'Frequência', orcamentos: 'Orçamentos (vendas)',
+    clientes: 'Clientes', fornecedores: 'Fornecedores', vendedores: 'Vendedores', motoristas: 'Motoristas', veiculos: 'Veículos', produtos: 'Produtos e materiais', depositos: 'Depósitos',
+    centros_custo: 'Centros de custo', contas_bancarias: 'Contas bancárias', despesas: 'Despesas (financeiro)', feriados: 'Feriados', precos_insumo: 'Preços de insumos', epis: 'EPIs e uniformes',
+    estoque_movimentos: 'Estoque (movimentações)', pedidos_compra: 'Pedidos de compra', recebimentos_compra: 'Recebimentos de compra', frota_eventos: 'Frota (abastecimento e manutenção)',
+    ausencias: 'Ausências e férias', cotacoes: 'Propostas de cotação', requisicoes_material: 'Requisições de material' };
+  // Modelos são só um atalho: preenchem a tela, o Master confere e salva. l = ver, c = criar, e = editar.
+  const MODELOS = {
+    'Almoxarife': { estoque_movimentos: 'lce', epis: 'lce', produtos: 'l', depositos: 'l', pedidos_compra: 'l', recebimentos_compra: 'l', requisicoes_material: 'l', obras: 'l', rdos: 'l' },
+    'Engenharia': { obras: 'lce', planejamento: 'lce', rdos: 'lce', requisicoes_material: 'lce', frequencia: 'l', funcionarios: 'l', produtos: 'l', depositos: 'l', estoque_movimentos: 'l', orcamentos: 'l' },
+    'RH / Departamento pessoal': { funcionarios: 'lce', frequencia: 'lce', ausencias: 'lce', epis: 'lce', feriados: 'lce', obras: 'l', rdos: 'l' },
+    'Comercial / Vendedor': { clientes: 'lce', vendedores: 'l', orcamentos: 'lce', obras: 'l' },
+    'Lançador financeiro': { despesas: 'lc', fornecedores: 'l', centros_custo: 'l', contas_bancarias: 'l', obras: 'l' },
+    'Compras': { pedidos_compra: 'lce', fornecedores: 'lce', cotacoes: 'lce', produtos: 'l', precos_insumo: 'lce', centros_custo: 'l', obras: 'l' },
+    'Somente leitura (sem financeiro)': Object.fromEntries(Object.keys(ROTULO_MOD).filter(m => !['despesas', 'contas_bancarias'].includes(m)).map(m => [m, 'l'])),
+  };
+  async function carregarUsuarios() {
+    const corpo = painel.querySelector('[data-cs=corpo]');
+    const lista = await W.MartinsProducaoRpc.usuariosListar(empresa);
+    const erroGeral = el('p', { classe: 'cs-erro', role: 'alert' });
+    const email = el('input', { id: 'us-email', type: 'email', placeholder: 'E-mail da conta já criada no Supabase Auth', autocomplete: 'off' }), nome = el('input', { id: 'us-nome', type: 'text', placeholder: 'Nome (opcional)', maxlength: '120' });
+    const vincular = el('button', { type: 'button', classe: 'cs-primario', texto: 'Vincular à empresa', disabled: !gravacao(), onclick: async () => {
+      vincular.disabled = true; erroGeral.textContent = '';
+      try { await W.MartinsProducaoRpc.usuarioVincular({ e: empresa, op: crypto.randomUUID(), email: email.value.trim(), nome: nome.value.trim() || null }); mensagem('Conta vinculada. Ela ainda não tem acesso a nenhum módulo: defina as permissões.'); await carregarUsuarios(); }
+      catch (e) { erroGeral.textContent = traduzir(e); vincular.disabled = !gravacao(); }
+    } });
+    const rows = lista.map(u => {
+      const eu = u.usuario_id === uid, ativo = u.acesso_ativo && u.perfil_ativo, acoes = el('div', { classe: 'cs-estado' });
+      acoes.append(el('span', { classe: 'cs-selo cs-' + (ativo ? 'aprovado' : 'cancelado'), texto: ativo ? 'Ativo' : 'Desativado' }));
+      if (u.papel !== 'master') acoes.append(el('button', { type: 'button', classe: 'cs-secundario', texto: 'Permissões', onclick: () => editarPermissoes(u) }));
+      if (!eu) acoes.append(el('button', { type: 'button', classe: ativo ? 'cs-perigo' : 'cs-secundario', texto: ativo ? 'Desativar' : 'Reativar', disabled: !gravacao(), onclick: async () => {
+        try { await W.MartinsProducaoRpc.usuarioSituacao({ e: empresa, op: crypto.randomUUID(), usuario: u.usuario_id, ativo: !u.acesso_ativo }); await carregarUsuarios(); } catch (e) { mensagem(traduzir(e), true); } } }));
+      const resumo = u.papel === 'master' ? 'Acesso total' : (Object.keys(u.permissoes).length ? Object.keys(u.permissoes).length + ' módulo(s)' : 'Nenhum módulo');
+      return el('tr', {}, el('td', { 'data-rotulo': 'Nome', texto: u.nome || '—' }), el('td', { 'data-rotulo': 'E-mail', texto: u.email || '—' }), el('td', { 'data-rotulo': 'Papel', texto: u.papel === 'master' ? 'Master' : u.papel === 'administrador' ? 'Administrador' : 'Operacional' }),
+        el('td', { 'data-rotulo': 'Acesso', texto: resumo }), el('td', {}, acoes));
+    });
+    corpo.replaceChildren(
+      el('section', { classe: 'cs-form' }, el('h3', { texto: 'Vincular uma conta à empresa' }), el('div', { classe: 'cs-acoes' }, email, nome, vincular), erroGeral,
+        el('p', { classe: 'cs-aviso', texto: 'A conta (e-mail e senha) é criada no painel do Supabase Auth; aqui você só a vincula a esta empresa. O vínculo nasce "operacional" e sem acesso a nenhum módulo. Master só é definido no banco.' })),
+      el('section', {}, el('h3', { texto: 'Pessoas com acesso a esta empresa' }), el('div', { classe: 'cs-rolagem' }, el('table', { classe: 'cs-tabela' },
+        el('thead', {}, el('tr', {}, ['Nome', 'E-mail', 'Papel', 'Acesso', 'Situação e ações'].map(x => el('th', { texto: x })))), el('tbody', {}, rows.length ? rows : [el('tr', {}, el('td', { colspan: 5, classe: 'cs-vazio', texto: 'Ninguém vinculado.' }))])))));
+    mensagem('Usuários: ' + lista.length + ' vínculo(s) na empresa ativa.');
+    function editarPermissoes(u) {
+      const caixas = {}; const atual = u.permissoes || {};
+      const marcar = (m, l, c, e) => { caixas[m].l.checked = l; caixas[m].c.checked = c; caixas[m].e.checked = e; };
+      const linhas = Object.keys(ROTULO_MOD).map(m => {
+        const p = atual[m] || {}; const cx = (rot, v) => el('input', { type: 'checkbox', 'aria-label': rot + ' ' + ROTULO_MOD[m], checked: v === true });
+        caixas[m] = { l: cx('Ver', p.ler), c: cx('Criar', p.criar), e: cx('Editar', p.editar) };
+        caixas[m].l.addEventListener('change', () => { if (!caixas[m].l.checked) { caixas[m].c.checked = false; caixas[m].e.checked = false; } });
+        for (const k of ['c', 'e']) caixas[m][k].addEventListener('change', () => { if (caixas[m][k].checked) caixas[m].l.checked = true; });
+        return el('tr', {}, el('td', { 'data-rotulo': 'Módulo', texto: ROTULO_MOD[m] }), el('td', { 'data-rotulo': 'Ver' }, caixas[m].l), el('td', { 'data-rotulo': 'Criar' }, caixas[m].c), el('td', { 'data-rotulo': 'Editar' }, caixas[m].e));
+      });
+      const modelo = el('select', { id: 'us-modelo', 'aria-label': 'Modelo de permissões' }); modelo.add(new Option('Aplicar um modelo…', '')); for (const k of Object.keys(MODELOS)) modelo.add(new Option(k, k));
+      modelo.addEventListener('change', () => { const mod = MODELOS[modelo.value]; if (!mod) return; for (const m of Object.keys(ROTULO_MOD)) { const s = mod[m] || ''; marcar(m, s.includes('l'), s.includes('c'), s.includes('e')); } mensagem('Modelo aplicado na tela. Confira e clique em Salvar permissões.'); });
+      const erro = el('p', { classe: 'cs-erro', role: 'alert' });
+      const salvar = el('button', { type: 'button', classe: 'cs-primario', texto: 'Salvar permissões', disabled: !gravacao(), onclick: async () => {
+        salvar.disabled = true; erro.textContent = '';
+        try {
+          const itens = Object.keys(ROTULO_MOD).map(m => ({ modulo: m, ler: caixas[m].l.checked, criar: caixas[m].c.checked, editar: caixas[m].e.checked }));
+          await W.MartinsProducaoRpc.permissoesDefinir({ e: empresa, op: crypto.randomUUID(), usuario: u.usuario_id, itens });
+          mensagem('Permissões salvas no servidor e valendo desde já para ' + (u.nome || u.email) + '.'); await carregarUsuarios();
+        } catch (e) { erro.textContent = traduzir(e); salvar.disabled = !gravacao(); }
+      } });
+      corpo.replaceChildren(el('section', { classe: 'cs-form' }, el('h3', { texto: 'Permissões de ' + (u.nome || u.email) }), el('p', { texto: u.email }), el('div', { classe: 'cs-acoes' }, modelo),
+        el('div', { classe: 'cs-rolagem' }, el('table', { classe: 'cs-tabela' }, el('thead', {}, el('tr', {}, ['Módulo', 'Ver', 'Criar', 'Editar'].map(x => el('th', { texto: x })))), el('tbody', {}, linhas))),
+        el('div', { classe: 'cs-acoes' }, salvar, el('button', { type: 'button', classe: 'cs-secundario', texto: 'Voltar', onclick: () => carregarUsuarios() })), erro,
+        el('p', { classe: 'cs-aviso', texto: 'Quem só tem "Ver" consulta, mas não grava. Despesas confidenciais continuam visíveis somente aos Masters, independentemente destas permissões.' })));
+    }
+  }
   async function mostrarHistorico(reg) {
     const corpo = painel.querySelector('[data-cs=corpo]');
     const voltar = el('button', { type: 'button', classe: 'cs-secundario', texto: '← Voltar à lista', onclick: () => desenhar() });
@@ -635,8 +706,8 @@
     if (!painel) montar();
     painel.hidden = false; D.body.classList.add('cs-aberto');
     try { await sincronizarSessao(); painel.querySelector('[data-cs=empresa]').textContent = (vinculo()?.nomeEmpresa || '') + (master() ? ' · Master' : '') + (gravacao() ? '' : ' · somente leitura'); if (MODULOS[inicial] && pode(inicial, 'ler')) aba = inicial; desenharAbas(); if (aba) await carregarAba();
-      if (preenchimento && !['estoque', 'compras', 'requisicoes'].includes(inicial) && aba !== inicial) { mensagem('O cadastro de ' + (MODULOS[inicial]?.titulo || inicial).toLowerCase() + ' ainda não está liberado para o seu vínculo nesta empresa (ou o módulo não foi habilitado no servidor). Nada foi gravado no navegador.', true); return; }
-      if (preenchimento && !['estoque', 'compras', 'requisicoes'].includes(inicial) && aba === inicial) {
+      if (preenchimento && !['estoque', 'compras', 'requisicoes', 'usuarios'].includes(inicial) && aba !== inicial) { mensagem('O cadastro de ' + (MODULOS[inicial]?.titulo || inicial).toLowerCase() + ' ainda não está liberado para o seu vínculo nesta empresa (ou o módulo não foi habilitado no servidor). Nada foi gravado no navegador.', true); return; }
+      if (preenchimento && !['estoque', 'compras', 'requisicoes', 'usuarios'].includes(inicial) && aba === inicial) {
         if (!pode(aba, 'criar')) { mensagem('Seu vínculo não tem permissão para cadastrar ' + MODULOS[aba].titulo.toLowerCase() + '. Peça a liberação ao Master.', true); return; }
         abrirFormulario(null, preenchimento);
         mensagem('Este cadastro agora é gravado no servidor e compartilhado com a equipe. Confira os dados trazidos do formulário e clique em Salvar.');

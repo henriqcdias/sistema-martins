@@ -139,3 +139,14 @@ Dos 52 formulários do sistema, nenhum formulário de **cadastro** grava mais s�
 - **Entregar** (`martins_producao_req_entregar`): evento atômico. Baixa o estoque do depósito como **consumo da obra** (o mesmo da v6, ligado à requisição) e atualiza a requisição. Entrega parcial permitida; nunca passa do pendente nem do saldo; lote com item sem saldo é recusado inteiro; reenvio é idempotente.
 - **Integração:** a entrega aparece no consumo líquido da obra e a sobra volta pela devolução da v6. Se a requisição tem RDO, não baixa o material já baixado naquele RDO.
 - **Ainda falta:** vínculo do texto livre do RDO com os itens, custo do material apropriado à obra (Gastos) e solicitação pelo celular do mestre de obras (hoje exige permissão de requisição).
+
+## Usuários e permissões (v9, 16/11/2026)
+
+`supabase/v9`: aba "Usuários e permissões" em Cadastros e Despesas, **visível e permitida somente ao Master** (o servidor confere; esconder a aba é só conveniência).
+
+- **Listar** quem tem vínculo com a empresa (nome, e-mail, papel, situação, quantos módulos).
+- **Permissões por módulo** (ver / criar / editar) para os 26 módulos, salvas de uma vez, com trilha de auditoria (antes e depois). Criar e editar exigem ver. **Modelos** (Almoxarife, Engenharia, RH, Comercial, Lançador financeiro, Compras, Somente leitura) apenas preenchem a tela; o Master confere e salva.
+- **Desativar e reativar** o acesso. O Master não altera o próprio acesso.
+- **Vincular uma conta já criada** no Supabase Auth pelo e-mail. A conta (e a senha) continua sendo criada no painel do Supabase; o vínculo nasce **operacional e sem permissão nenhuma**. **Não existe tela nem função que crie ou promova Master** (decisão do banco, como no briefing).
+- **Atenção ao evoluir:** a lista de módulos de `martins_producao_permissoes_definir` e do editor da tela precisa acompanhar cada módulo novo.
+- **Produção:** esta migração mexe em quem acessa a empresa; só vai para o banco de produção com autorização do Henrique.

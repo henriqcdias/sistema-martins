@@ -36,3 +36,5 @@ jobs:
         run: node supabase/v7/validar-v7.cjs .
       - name: Contratos v8 (requisição de materiais)
         run: node supabase/v8/validar-v8.cjs .
+      - name: Contratos v9 (usuários e permissões)
+        run: node supabase/v9/validar-v9.cjs .

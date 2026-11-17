@@ -28,3 +28,5 @@ jobs:
         run: node supabase/v3/validar-v3.cjs .
       - name: Contratos v4 (estoque)
         run: node supabase/v4/validar-v4.cjs .
+      - name: Contratos v5 (compras)
+        run: node supabase/v5/validar-v5.cjs .

@@ -97,7 +97,9 @@
       '/rest/v1/rpc/martins_producao_salvar',
       '/rest/v1/rpc/martins_producao_salvar_lote',
       '/rest/v1/rpc/martins_producao_despesa_estado',
-      '/rest/v1/rpc/martins_producao_estoque_mover'
+      '/rest/v1/rpc/martins_producao_estoque_mover',
+      '/rest/v1/rpc/martins_producao_compras_estado',
+      '/rest/v1/rpc/martins_producao_compras_receber'
     ].includes(path);
     const sessaoPermitida = (method === 'POST' && [
       '/auth/v1/token?grant_type=password',
@@ -425,6 +427,8 @@
     salvar:args=>rpcProducao('martins_producao_salvar',args),
     catalogos:e=>rpcProducao('martins_producao_catalogos',{e}),
     lote:args=>rpcProducao('martins_producao_salvar_lote',args),
+    comprasEstado:args=>rpcProducao('martins_producao_compras_estado',args),
+    comprasReceber:args=>rpcProducao('martins_producao_compras_receber',args),
     estoqueSaldos:e=>rpcProducao('martins_producao_estoque_saldos',{e}),
     estoqueMover:args=>rpcProducao('martins_producao_estoque_mover',args),
     auditoria:args=>rpcProducao('martins_producao_auditoria',args),

@@ -29,7 +29,7 @@ async function banco() {
     CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$ SELECT nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;`);
   await db.exec(sql('supabase/producao/base/estrutura_anterior_as_migracoes.sql'));
   await db.exec(`INSERT INTO public.martins_empresas(id, razao_social) VALUES ('${E}', 'Construtora Martins - cadastro inicial');`);
-  for (const d of ['supabase/producao/migrations', 'supabase/v2/migrations', 'supabase/v3/migrations', 'supabase/v4/migrations'])
+  for (const d of ['supabase/producao/migrations', 'supabase/v2/migrations', 'supabase/v3/migrations', 'supabase/v4/migrations', 'supabase/v5/migrations'])
     for (const f of fs.readdirSync(path.join(raiz, d)).sort()) await db.exec(sql(d + '/' + f));
   const [M, L] = Object.values(USUARIOS);
   await db.exec(`INSERT INTO auth.users VALUES ('${M}','master@teste.invalid'),('${L}','lancador@teste.invalid');
@@ -39,7 +39,7 @@ async function banco() {
   return db;
 }
 
-const TIPOS = { e: 'uuid', r: 'uuid', apos: 'uuid', op: 'uuid', v: 'bigint', limite: 'integer', d: 'jsonb', itens: 'jsonb', de: 'date', ate: 'date', m: 'text', estado: 'text', motivo: 'text', tipo: 'text', produto: 'uuid', origem: 'uuid', destino: 'uuid', qtd: 'bigint', ref: 'uuid' };
+const TIPOS = { e: 'uuid', r: 'uuid', apos: 'uuid', op: 'uuid', v: 'bigint', limite: 'integer', d: 'jsonb', itens: 'jsonb', de: 'date', ate: 'date', m: 'text', estado: 'text', motivo: 'text', tipo: 'text', produto: 'uuid', origem: 'uuid', destino: 'uuid', qtd: 'bigint', ref: 'uuid', pedido: 'uuid', deposito: 'uuid', documento: 'jsonb' };
 async function supabase(db, route) {
   const req = route.request(), url = new URL(req.url());
   const json = (status, body) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
@@ -426,6 +426,45 @@ async function novo(page, campos) {
     await pm2.evaluate(() => { const f = document.getElementById('form-movimento-estoque'); const m = f.closest('[id^=modal-]'); if (m) { m.classList.remove('hidden'); m.style.display = 'flex'; } f.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true })); });
     await pm2.waitForSelector('#est-tipo', { timeout: 10000 });
     check((await semRastroLocal(pm2, 'estoque_movimentos')).length === 0, 'o formulário antigo de movimentação abre o estoque do servidor (nada local)');
+    await pm2.evaluate(() => window.MartinsCadastrosServidor.fechar());
+
+    console.log('Compras (v5): pedido -> aprovação -> recebimento');
+    await pm2.evaluate(() => window.MartinsCadastrosServidor.abrir('compras'));
+    await pm2.waitForSelector('#cp-fornecedor', { timeout: 15000 });
+    await pm2.selectOption('#cp-fornecedor', { label: 'Fornecedor Teste' }); await pm2.selectOption('#cp-centro', { label: 'ADM-01 · Administrativo Sede' });
+    const linhas0 = await pm2.$$('[data-linha]'); const [p0, q0, pr0] = await linhas0[0].$$('select,input');
+    await p0.selectOption(PA); await q0.fill('10'); await pr0.fill('5,00');
+    await pm2.click('#cs-painel button:text-is("+ Item")');
+    const linhas1 = await pm2.$$('[data-linha]'); const [p1, q1, pr1] = await linhas1[1].$$('select,input');
+    await p1.selectOption(PB); await q1.fill('4'); await pr1.fill('20,00');
+    await pm2.click('#cs-painel button:text-is("Salvar pedido (rascunho)")');
+    await pm2.waitForSelector('[data-cp=pedidos] tbody tr:has-text("Rascunho")');
+    check(true, 'pedido de compra criado pela tela e relido do servidor (rascunho)');
+    check(await pm2.$eval('[data-cp=pedidos] tbody', n => /130,00/.test(n.textContent)), 'total do pedido calculado: 10×5 + 4×20 = R$ 130,00');
+    await pm2.fill('[data-cp=pedidos] tbody tr input', 'Conferido com a cotação');
+    await pm2.click('[data-cp=pedidos] button:text-is("Aprovar")');
+    await pm2.waitForSelector('[data-cp=pedidos] tbody tr:has-text("Aprovado")');
+    check(true, 'Master aprova o pedido');
+    await pm2.click('[data-cp=pedidos] button:text-is("Receber")');
+    await pm2.waitForSelector('#rc-deposito');
+    await pm2.selectOption('#rc-deposito', DA); await pm2.fill('#rc-nf', '5501');
+    const campos = await pm2.$$('#cs-painel .cs-form input[aria-label^="Quantidade recebida"]'); await campos[0].fill('10'); await campos[1].fill('');
+    await pm2.click('#cs-painel button:text-is("Confirmar recebimento")');
+    await pm2.waitForSelector('[data-cp=pedidos] tbody tr:has-text("Recebido em parte")');
+    const sA = (await db.query(`SELECT martins_producao_v1.saldo($1,$2,$3) s`, [E, PA, DA])).rows[0].s;
+    check(Number(sA) === 20000, 'recebimento deu entrada no estoque: A passou de 10 para 20');
+    const desp = (await db.query(`SELECT dados FROM martins_producao_v1.registros WHERE modulo='despesas' AND dados->>'documento_numero'='5501'`)).rows;
+    check(desp.length === 1 && desp[0].dados.estado === 'pendente_conferencia' && desp[0].dados.valor_centavos === 5000, 'gerou 1 obrigação pendente de conferência de R$ 50,00 vinculada à NF 5501');
+    await pm2.click('[data-cp=pedidos] button:text-is("Receber")'); await pm2.waitForSelector('#rc-deposito');
+    await pm2.selectOption('#rc-deposito', DA); await pm2.fill('#rc-nf', '5501');
+    const campos2 = await pm2.$$('#cs-painel .cs-form input[aria-label^="Quantidade recebida"]'); await campos2[0].fill('4');
+    await pm2.click('#cs-painel button:text-is("Confirmar recebimento")');
+    await pm2.waitForFunction(() => /nota fiscal já foi recebida/.test(document.querySelector('#cs-painel .cs-erro')?.textContent || ''));
+    check((await db.query(`SELECT count(*)::int n FROM martins_producao_v1.registros WHERE modulo='despesas' AND dados->>'documento_numero'='5501'`)).rows[0].n === 1, 'a mesma NF não entra duas vezes: mensagem clara e nada duplicado');
+    await pm2.evaluate(() => window.MartinsCadastrosServidor.fechar());
+    await pm2.evaluate(() => { const f = document.getElementById('form-novo-pedido-compra'); const m = f.closest('[id^=modal-]'); if (m) { m.classList.remove('hidden'); m.style.display = 'flex'; } f.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true })); });
+    await pm2.waitForSelector('#cp-fornecedor', { timeout: 10000 });
+    check(true, 'o formulário antigo de pedido de compra abre o módulo de compras do servidor');
     await pm2.evaluate(() => window.MartinsCadastrosServidor.fechar());
 
     console.log('Rodada 4: ficha, histórico, busca e mensagens');

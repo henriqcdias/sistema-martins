@@ -129,3 +129,13 @@ Dos 52 formulários do sistema, nenhum formulário de **cadastro** grava mais s�
 - **Propostas de cotação (`cotacoes`)**: fornecedor cadastrado ou só o nome, subtotal, frete e desconto; o **total é calculado no servidor** e o desconto não passa do valor.
 - **Vendas:** orçamentos já estavam no servidor (v1). **Contas a receber / pedidos de venda ainda não.**
 - **Limite conhecido:** a proposta de cotação ainda não se liga à requisição de cotação, que continua local; por isso leva uma "referência" digitada.
+
+## Requisição de materiais da obra (v8, 16/11/2026)
+
+`supabase/v8`: fluxo **solicitar → aprovar → entregar**, na aba "Requisições de material" de Cadastros e Despesas.
+
+- **Solicitar** (`requisicoes_material`): obra, depósito de origem, RDO opcional, data necessária e itens. Número sequencial, estado e "entregue" são definidos pelo servidor. Só se edita enquanto "solicitada".
+- **Aprovar ou recusar:** exclusivo do Master, com motivo. **Cancelar:** quem edita requisições, enquanto nada foi entregue.
+- **Entregar** (`martins_producao_req_entregar`): evento atômico. Baixa o estoque do depósito como **consumo da obra** (o mesmo da v6, ligado à requisição) e atualiza a requisição. Entrega parcial permitida; nunca passa do pendente nem do saldo; lote com item sem saldo é recusado inteiro; reenvio é idempotente.
+- **Integração:** a entrega aparece no consumo líquido da obra e a sobra volta pela devolução da v6. Se a requisição tem RDO, não baixa o material já baixado naquele RDO.
+- **Ainda falta:** vínculo do texto livre do RDO com os itens, custo do material apropriado à obra (Gastos) e solicitação pelo celular do mestre de obras (hoje exige permissão de requisição).

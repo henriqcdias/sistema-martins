@@ -29,7 +29,7 @@ async function banco() {
     CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$ SELECT nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;`);
   await db.exec(sql('supabase/producao/base/estrutura_anterior_as_migracoes.sql'));
   await db.exec(`INSERT INTO public.martins_empresas(id, razao_social) VALUES ('${E}', 'Construtora Martins - cadastro inicial');`);
-  for (const d of ['supabase/producao/migrations', 'supabase/v2/migrations', 'supabase/v3/migrations', 'supabase/v4/migrations', 'supabase/v5/migrations', 'supabase/v6/migrations', 'supabase/v7/migrations'])
+  for (const d of ['supabase/producao/migrations', 'supabase/v2/migrations', 'supabase/v3/migrations', 'supabase/v4/migrations', 'supabase/v5/migrations', 'supabase/v6/migrations', 'supabase/v7/migrations', 'supabase/v8/migrations'])
     for (const f of fs.readdirSync(path.join(raiz, d)).sort()) await db.exec(sql(d + '/' + f));
   const [M, L] = Object.values(USUARIOS);
   await db.exec(`INSERT INTO auth.users VALUES ('${M}','master@teste.invalid'),('${L}','lancador@teste.invalid');
@@ -39,7 +39,7 @@ async function banco() {
   return db;
 }
 
-const TIPOS = { e: 'uuid', r: 'uuid', apos: 'uuid', op: 'uuid', v: 'bigint', limite: 'integer', d: 'jsonb', itens: 'jsonb', de: 'date', ate: 'date', m: 'text', estado: 'text', motivo: 'text', tipo: 'text', produto: 'uuid', origem: 'uuid', destino: 'uuid', qtd: 'bigint', ref: 'uuid', pedido: 'uuid', deposito: 'uuid', documento: 'jsonb', obra: 'uuid', rdo: 'uuid', consumo: 'uuid' };
+const TIPOS = { e: 'uuid', r: 'uuid', apos: 'uuid', op: 'uuid', v: 'bigint', limite: 'integer', d: 'jsonb', itens: 'jsonb', de: 'date', ate: 'date', m: 'text', estado: 'text', motivo: 'text', tipo: 'text', produto: 'uuid', origem: 'uuid', requisicao: 'uuid', destino: 'uuid', qtd: 'bigint', ref: 'uuid', pedido: 'uuid', deposito: 'uuid', documento: 'jsonb', obra: 'uuid', rdo: 'uuid', consumo: 'uuid' };
 async function supabase(db, route) {
   const req = route.request(), url = new URL(req.url());
   const json = (status, body) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
@@ -546,6 +546,36 @@ async function novo(page, campos) {
     check((await db.query(`SELECT (dados->>'total_centavos')::bigint t FROM martins_producao_v1.registros WHERE modulo='cotacoes'`)).rows[0].t === 103000, 'proposta gravada; o total (R$ 1.030,00) é calculado pelo servidor');
     await pm2.evaluate(() => window.MartinsCadastrosServidor.fechar());
     check(await semRastroLocal(pm2, 'Distribuidora QA').then(x => x.length === 0) && await semRastroLocal(pm2, 'Férias coletivas').then(x => x.length === 0), 'nada de cotação ou férias fica no navegador');
+
+    console.log('Requisição de materiais da obra (v8)');
+    const saldoA = async () => Number((await db.query(`SELECT martins_producao_v1.saldo($1,$2,$3) s`, [E, PA, DA])).rows[0].s);
+    const antesReq = await saldoA();
+    await pm2.evaluate(() => window.MartinsCadastrosServidor.abrir('requisicoes'));
+    await pm2.waitForSelector('#rq-obra', { timeout: 15000 });
+    await pm2.selectOption('#rq-obra', obraQa); await pm2.selectOption('#rq-deposito', DA);
+    await pm2.selectOption('#cs-painel [data-linha] select', PA); await pm2.fill('#cs-painel [data-linha] input', '3');
+    await pm2.click('#cs-painel button:text-is("Enviar requisição")');
+    await pm2.waitForSelector('[data-rq=lista] tbody tr:has-text("Solicitada")');
+    const rqs = (await db.query(`SELECT id, dados FROM martins_producao_v1.registros WHERE modulo='requisicoes_material'`)).rows;
+    check(rqs.length === 1 && rqs[0].dados.estado === 'solicitada' && rqs[0].dados.itens[0].qtd_milli === 3000 && rqs[0].dados.numero === 1, 'requisição enviada e gravada no servidor (nº 1, 3 un, estado solicitada)');
+    check(await saldoA() === antesReq, 'solicitar não mexe no estoque');
+    await pm2.click('[data-rq=lista] tbody tr:has-text("Solicitada") button:text-is("Entregar")', { timeout: 1500 }).then(() => check(false, 'requisição não aprovada não oferece entrega'), () => check(true, 'requisição não aprovada não oferece "Entregar"'));
+    await pm2.fill('[data-rq=lista] tbody tr input[aria-label="Motivo"]', 'Liberado QA-REQ-8');
+    await pm2.click('[data-rq=lista] tbody tr button:text-is("Aprovar")');
+    await pm2.waitForSelector('[data-rq=lista] tbody tr:has-text("Aprovada")');
+    check((await db.query(`SELECT dados->>'estado' e FROM martins_producao_v1.registros WHERE modulo='requisicoes_material'`)).rows[0].e === 'aprovada', 'o Master aprova pela tela e o servidor registra');
+    const entregaUi = async (q) => { await pm2.click('[data-rq=lista] tbody tr button:text-is("Entregar")'); await pm2.waitForSelector('#cs-painel input[aria-label^="Quantidade entregue de"]'); await pm2.fill('#cs-painel input[aria-label^="Quantidade entregue de"]', q); await pm2.click('#cs-painel button:text-is("Confirmar entrega")'); };
+    await entregaUi('2');
+    await pm2.waitForSelector('[data-rq=lista] tbody tr:has-text("Entregue em parte")');
+    check(await saldoA() === antesReq - 2000, 'entrega parcial de 2 baixou o estoque (consumo da obra)');
+    await entregaUi('5');
+    await pm2.waitForFunction(() => [...document.querySelectorAll('#cs-painel .cs-erro')].some(n => /maior que o pendente/.test(n.textContent)));
+    check(await saldoA() === antesReq - 2000, 'entregar mais que o pendente é recusado com mensagem clara e nada é baixado');
+    await pm2.fill('#cs-painel input[aria-label^="Quantidade entregue de"]', '1'); await pm2.click('#cs-painel button:text-is("Confirmar entrega")');
+    await pm2.waitForSelector('[data-rq=lista] tbody tr:has-text("Entregue")');
+    check(await saldoA() === antesReq - 3000 && (await db.query(`SELECT count(*)::int n FROM martins_producao_v1.registros WHERE modulo='estoque_movimentos' AND dados->>'requisicao_id'=$1`, [rqs[0].id])).rows[0].n === 2, 'entrega do restante conclui: 3 baixados em 2 consumos ligados à requisição');
+    check(await semRastroLocal(pm2, 'Liberado QA-REQ-8').then(x => x.length === 0), 'nada da requisição fica no navegador');
+    await pm2.evaluate(() => window.MartinsCadastrosServidor.fechar());
 
     console.log('Rodada 4: ficha, histórico, busca e mensagens');
     await pm2.evaluate(() => { document.getElementById('modal-editar-colaborador').classList.add('hidden'); });

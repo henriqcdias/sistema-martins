@@ -63,6 +63,7 @@
       ['rendimento', 'Rendimento / custo por metro', 'texto'], ['observacao', 'Observação', 'area']] },
     estoque: { titulo: 'Estoque', colunas: [], campos: [] },
     compras: { titulo: 'Compras', colunas: [], campos: [] },
+    requisicoes: { titulo: 'Requisições de material', colunas: [], campos: [] },
     epis: { titulo: 'EPIs e uniformes', colunas: ['codigo', 'nome', 'tamanho', 'estoque_minimo'], campos: [
       ['nome', 'Descrição', 'texto', { obrigatorio: true }], ['codigo', 'Código de referência', 'texto'], ['categoria', 'Categoria', 'texto'],
       ['tamanho', 'Tamanho / numeração', 'texto'], ['preco_centavos', 'Preço unitário de custo (R$)', 'dinheiro'], ['estoque_minimo', 'Estoque mínimo para alerta', 'numero']] },
@@ -108,7 +109,7 @@
   };
   const contexto = () => W.obterContextoSegurancaAutenticadoWork?.() || null;
   const vinculo = () => contexto()?.vinculos?.find(v => v.empresa_id === empresa) || null;
-  const pode = (m, a) => vinculo()?.permissoes?.[m === 'estoque' ? 'estoque_movimentos' : m === 'compras' ? 'pedidos_compra' : m]?.[a] === true;
+  const pode = (m, a) => vinculo()?.permissoes?.[m === 'estoque' ? 'estoque_movimentos' : m === 'compras' ? 'pedidos_compra' : m === 'requisicoes' ? 'requisicoes_material' : m]?.[a] === true;
   const master = () => vinculo()?.papelServidor === 'master';
   const gravacao = () => W.gravacaoHabilitadaWork?.() === true;
   const reais = c => (Number(c) / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -167,6 +168,7 @@
     await carregarCatalogos();
     if (aba === 'estoque') return carregarEstoque();
     if (aba === 'compras') return carregarCompras();
+    if (aba === 'requisicoes') return carregarRequisicoes();
     const linhas = await listarTodos(aba);
     registros = new Map(linhas.map(r => [r.id, r]));
     desenhar();
@@ -458,6 +460,82 @@
         el('p', { classe: 'cs-aviso', texto: 'Ao confirmar: o estoque recebe a entrada e é gerada a obrigação "pendente de conferência" (nada é pago automaticamente). A mesma nota não pode ser lançada duas vezes.' })));
     }
   }
+  // ---------- Requisição de materiais da obra (v8): solicitar -> aprovar (Master) -> entregar ----------
+  const SIT_REQ = { solicitada: 'Solicitada', aprovada: 'Aprovada', parcial: 'Entregue em parte', entregue: 'Entregue', recusada: 'Recusada', cancelada: 'Cancelada' };
+  let pendenteReq = null, pendenteEntrega = null;
+  async function enviarRequisicao(d) {
+    const chave = JSON.stringify(d);
+    if (!pendenteReq || pendenteReq.chave !== chave) { const cmd = api.prepare({ empresa, modulo: 'requisicoes_material', id: crypto.randomUUID(), revisao: 0, dados: d }); pendenteReq = { chave, op: cmd.operacao }; }
+    const r = await api.send(pendenteReq.op); pendenteReq = null; return r;
+  }
+  async function carregarRequisicoes() {
+    const [produtos, depositos, rdos, reqs] = await Promise.all([listarTodos('produtos').catch(() => []), listarTodos('depositos').catch(() => []), listarTodos('rdos').catch(() => []), listarTodos('requisicoes_material')]);
+    const nomeObra = id => (catalogos.obras || []).find(x => x.id === id)?.nome || '—';
+    const nomeP = id => { const p = produtos.find(x => x.id === id); return p ? [p.dados.codigo, p.dados.descricao || p.dados.nome].filter(Boolean).join(' · ') : '—'; };
+    const corpo = painel.querySelector('[data-cs=corpo]'); const secoes = [];
+    if (pode('requisicoes', 'criar')) {
+      const obra = el('select', { id: 'rq-obra' }); obra.add(new Option('Obra', '')); for (const o of catalogos.obras || []) obra.add(new Option(o.nome, o.id));
+      const rdo = el('select', { id: 'rq-rdo' });
+      const preencherRdos = () => { rdo.replaceChildren(); rdo.add(new Option('Sem RDO específico', '')); for (const r of rdos.filter(x => x.dados.obra_id === obra.value)) rdo.add(new Option('RDO nº ' + (r.dados.numero ?? '') + ' · ' + String(r.dados.data || '').split('-').reverse().join('/'), r.id)); };
+      preencherRdos(); obra.addEventListener('change', preencherRdos);
+      const dep = el('select', { id: 'rq-deposito' }); dep.add(new Option('Depósito de origem', '')); for (const x of depositos.filter(z => z.dados.ativo !== false)) dep.add(new Option(x.dados.nome, x.id));
+      const quando = el('input', { id: 'rq-data', type: 'date', 'aria-label': 'Necessário em' }); const obs = el('input', { id: 'rq-obs', type: 'text', placeholder: 'Observação (opcional)', maxlength: '500' });
+      const linhas = el('div', {}); const erro = el('p', { classe: 'cs-erro', role: 'alert' });
+      const novaLinha = () => { const p = el('select', { 'aria-label': 'Produto' }); p.add(new Option('Produto', '')); for (const x of produtos.filter(z => z.dados.ativo !== false)) p.add(new Option(nomeP(x.id), x.id));
+        linhas.append(el('div', { classe: 'cs-acoes', 'data-linha': '' }, p, el('input', { type: 'text', inputmode: 'decimal', placeholder: 'Quantidade', 'aria-label': 'Quantidade' }))); };
+      novaLinha();
+      const enviar = el('button', { type: 'button', classe: 'cs-primario', texto: 'Enviar requisição', disabled: !gravacao(), onclick: async () => {
+        enviar.disabled = true; erro.textContent = '';
+        try {
+          if (!obra.value) throw Error('Escolha a obra.'); if (!dep.value) throw Error('Escolha o depósito de origem.');
+          const itens = [...linhas.querySelectorAll('[data-linha]')].map(l => { const [p, q] = l.querySelectorAll('select,input'); if (!p.value) throw Error('Escolha o material de cada linha.'); return { produto_id: p.value, qtd_milli: milli(q.value) }; });
+          await enviarRequisicao({ obra_id: obra.value, rdo_id: rdo.value || null, deposito_id: dep.value, necessario_em: quando.value || null, observacao: obs.value.trim() || null, itens });
+          mensagem('Requisição enviada e confirmada pelo servidor.'); await carregarRequisicoes();
+        } catch (e) { erro.textContent = traduzir(e); enviar.disabled = !gravacao(); }
+      } });
+      secoes.push(el('section', { classe: 'cs-form' }, el('h3', { texto: 'Nova requisição de material' }), el('div', { classe: 'cs-acoes' }, obra, rdo, dep, quando), obs, linhas,
+        el('div', { classe: 'cs-acoes' }, el('button', { type: 'button', classe: 'cs-secundario', texto: '+ Item', onclick: novaLinha }), enviar), erro,
+        !produtos.length ? el('p', { classe: 'cs-aviso', texto: 'Cadastre produtos e depósitos antes de requisitar materiais.' }) : null));
+    }
+    const rows = reqs.slice().sort((a, b) => Number(b.dados.numero) - Number(a.dados.numero)).map(r => {
+      const d = r.dados, acoes = el('div', { classe: 'cs-estado' });
+      acoes.append(el('span', { classe: 'cs-selo cs-' + (d.estado === 'aprovada' ? 'aprovado' : d.estado === 'entregue' ? 'conciliado' : ['cancelada', 'recusada'].includes(d.estado) ? 'cancelado' : 'pendente_conferencia'), texto: SIT_REQ[d.estado] || d.estado }));
+      const podeDecidir = master() && d.estado === 'solicitada', podeCancelar = pode('requisicoes', 'editar') && (d.estado === 'solicitada' || (d.estado === 'aprovada'));
+      if (podeDecidir || podeCancelar) {
+        const motivo = el('input', { type: 'text', placeholder: 'Motivo / observação', 'aria-label': 'Motivo' }); acoes.append(motivo);
+        const mudar = estado => async () => { if (!motivo.value.trim()) { motivo.focus(); mensagem('Informe o motivo.', true); return; }
+          try { await W.MartinsProducaoRpc.reqEstado({ e: empresa, r: r.id, v: Number(r.revisao), estado, motivo: motivo.value.trim(), op: crypto.randomUUID() }); await carregarRequisicoes(); } catch (e) { mensagem(traduzir(e), true); } };
+        if (podeDecidir) { acoes.append(el('button', { type: 'button', classe: 'cs-secundario', texto: 'Aprovar', disabled: !gravacao(), onclick: mudar('aprovada') }), el('button', { type: 'button', classe: 'cs-perigo', texto: 'Recusar', disabled: !gravacao(), onclick: mudar('recusada') })); }
+        if (podeCancelar) acoes.append(el('button', { type: 'button', classe: 'cs-perigo', texto: 'Cancelar', disabled: !gravacao(), onclick: mudar('cancelada') }));
+      }
+      if (['aprovada', 'parcial'].includes(d.estado) && pode('estoque', 'criar')) acoes.append(el('button', { type: 'button', classe: 'cs-primario', texto: 'Entregar', onclick: () => formEntregar(r) }));
+      return el('tr', {}, el('td', { 'data-rotulo': 'Nº', texto: d.numero }), el('td', { 'data-rotulo': 'Obra', texto: nomeObra(d.obra_id) }),
+        el('td', { 'data-rotulo': 'Entregue/Pedido', texto: d.itens.map(i => nomeP(i.produto_id).split(' · ')[0] + ' ' + qtd(i.entregue_milli) + '/' + qtd(i.qtd_milli)).join(', ') }), el('td', {}, acoes));
+    });
+    secoes.push(el('section', { 'data-rq': 'lista' }, el('h3', { texto: 'Requisições de material' }), el('div', { classe: 'cs-rolagem' }, el('table', { classe: 'cs-tabela' },
+      el('thead', {}, el('tr', {}, ['Nº', 'Obra', 'Entregue/Pedido', 'Situação e ações'].map(x => el('th', { texto: x })))), el('tbody', {}, rows.length ? rows : [el('tr', {}, el('td', { colspan: 4, classe: 'cs-vazio', texto: 'Nenhuma requisição.' }))])))));
+    corpo.replaceChildren(...secoes);
+    mensagem('Requisições: ' + reqs.length + ' da empresa ativa.');
+    function formEntregar(r) {
+      const campos = r.dados.itens.filter(i => i.entregue_milli < i.qtd_milli).map(i => ({ i, input: el('input', { type: 'text', inputmode: 'decimal', value: ((i.qtd_milli - i.entregue_milli) / 1000).toString().replace('.', ','), 'aria-label': 'Quantidade entregue de ' + nomeP(i.produto_id) }) }));
+      const erro = el('p', { classe: 'cs-erro', role: 'alert' });
+      const ok = el('button', { type: 'button', classe: 'cs-primario', texto: 'Confirmar entrega', disabled: !gravacao(), onclick: async () => {
+        ok.disabled = true; erro.textContent = '';
+        try {
+          const itens = campos.filter(c => c.input.value.trim() && Number(String(c.input.value).replace(',', '.')) > 0).map(c => ({ produto_id: c.i.produto_id, qtd_milli: milli(c.input.value) }));
+          if (!itens.length) throw Error('Informe a quantidade entregue de ao menos um item.');
+          const args = { e: empresa, requisicao: r.id, itens };
+          const k = JSON.stringify(args); if (!pendenteEntrega || pendenteEntrega.chave !== k) pendenteEntrega = { chave: k, op: crypto.randomUUID() };
+          const res = await W.MartinsProducaoRpc.reqEntregar({ ...args, op: pendenteEntrega.op }); pendenteEntrega = null;
+          mensagem('Entrega confirmada: o estoque foi baixado e o consumo ficou registrado na obra (' + (SIT_REQ[res.estado] || res.estado).toLowerCase() + ').'); await carregarRequisicoes();
+        } catch (e) { erro.textContent = traduzir(e); ok.disabled = !gravacao(); }
+      } });
+      corpo.replaceChildren(el('section', { classe: 'cs-form' }, el('h3', { texto: 'Entregar requisição nº ' + r.dados.numero + ' · ' + nomeObra(r.dados.obra_id) }),
+        ...campos.map(c => el('div', { classe: 'cs-acoes' }, el('span', { texto: nomeP(c.i.produto_id) + ' (falta ' + qtd(c.i.qtd_milli - c.i.entregue_milli) + ')' }), c.input)),
+        el('div', { classe: 'cs-acoes' }, ok, el('button', { type: 'button', classe: 'cs-secundario', texto: 'Cancelar', onclick: () => carregarRequisicoes() })), erro,
+        el('p', { classe: 'cs-aviso', texto: 'Ao confirmar: o material sai do depósito da requisição e vira consumo da obra, na mesma operação. Não é possível entregar mais que o pedido nem mais que o saldo.' })));
+    }
+  }
   async function mostrarHistorico(reg) {
     const corpo = painel.querySelector('[data-cs=corpo]');
     const voltar = el('button', { type: 'button', classe: 'cs-secundario', texto: '← Voltar à lista', onclick: () => desenhar() });
@@ -557,8 +635,8 @@
     if (!painel) montar();
     painel.hidden = false; D.body.classList.add('cs-aberto');
     try { await sincronizarSessao(); painel.querySelector('[data-cs=empresa]').textContent = (vinculo()?.nomeEmpresa || '') + (master() ? ' · Master' : '') + (gravacao() ? '' : ' · somente leitura'); if (MODULOS[inicial] && pode(inicial, 'ler')) aba = inicial; desenharAbas(); if (aba) await carregarAba();
-      if (preenchimento && !['estoque', 'compras'].includes(inicial) && aba !== inicial) { mensagem('O cadastro de ' + (MODULOS[inicial]?.titulo || inicial).toLowerCase() + ' ainda não está liberado para o seu vínculo nesta empresa (ou o módulo não foi habilitado no servidor). Nada foi gravado no navegador.', true); return; }
-      if (preenchimento && !['estoque', 'compras'].includes(inicial) && aba === inicial) {
+      if (preenchimento && !['estoque', 'compras', 'requisicoes'].includes(inicial) && aba !== inicial) { mensagem('O cadastro de ' + (MODULOS[inicial]?.titulo || inicial).toLowerCase() + ' ainda não está liberado para o seu vínculo nesta empresa (ou o módulo não foi habilitado no servidor). Nada foi gravado no navegador.', true); return; }
+      if (preenchimento && !['estoque', 'compras', 'requisicoes'].includes(inicial) && aba === inicial) {
         if (!pode(aba, 'criar')) { mensagem('Seu vínculo não tem permissão para cadastrar ' + MODULOS[aba].titulo.toLowerCase() + '. Peça a liberação ao Master.', true); return; }
         abrirFormulario(null, preenchimento);
         mensagem('Este cadastro agora é gravado no servidor e compartilhado com a equipe. Confira os dados trazidos do formulário e clique em Salvar.');

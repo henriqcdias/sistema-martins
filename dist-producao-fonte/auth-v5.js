@@ -92,7 +92,8 @@
       '/rest/v1/rpc/martins_producao_auditoria',
       '/rest/v1/rpc/martins_producao_estoque_saldos',
       '/rest/v1/rpc/martins_producao_obra_materiais',
-      '/rest/v1/rpc/martins_producao_usuarios_listar'
+      '/rest/v1/rpc/martins_producao_usuarios_listar',
+      '/rest/v1/rpc/martins_producao_receber_totais'
     ].includes(path);
     // Gravação só quando o build a habilita explicitamente (homologação); a produção permanece somente leitura.
     const escrita = gravacaoHabilitadaWork() && schema === 'public' && method === 'POST' && [
@@ -108,7 +109,10 @@
       '/rest/v1/rpc/martins_producao_req_entregar',
       '/rest/v1/rpc/martins_producao_permissoes_definir',
       '/rest/v1/rpc/martins_producao_usuario_situacao',
-      '/rest/v1/rpc/martins_producao_usuario_vincular'
+      '/rest/v1/rpc/martins_producao_usuario_vincular',
+      '/rest/v1/rpc/martins_producao_receber_baixar',
+      '/rest/v1/rpc/martins_producao_receber_estado',
+      '/rest/v1/rpc/martins_producao_receber_estornar'
     ].includes(path);
     const sessaoPermitida = (method === 'POST' && [
       '/auth/v1/token?grant_type=password',
@@ -443,6 +447,10 @@
     comprasReceber:args=>rpcProducao('martins_producao_compras_receber',args),
     reqEstado:args=>rpcProducao('martins_producao_req_estado',args),
     reqEntregar:args=>rpcProducao('martins_producao_req_entregar',args),
+    receberTotais:e=>rpcProducao('martins_producao_receber_totais',{e}),
+    receberBaixar:args=>rpcProducao('martins_producao_receber_baixar',args),
+    receberEstado:args=>rpcProducao('martins_producao_receber_estado',args),
+    receberEstornar:args=>rpcProducao('martins_producao_receber_estornar',args),
     usuariosListar:e=>rpcProducao('martins_producao_usuarios_listar',{e}),
     permissoesDefinir:args=>rpcProducao('martins_producao_permissoes_definir',args),
     usuarioSituacao:args=>rpcProducao('martins_producao_usuario_situacao',args),

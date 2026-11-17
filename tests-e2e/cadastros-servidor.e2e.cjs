@@ -29,7 +29,7 @@ async function banco() {
     CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$ SELECT nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;`);
   await db.exec(sql('supabase/producao/base/estrutura_anterior_as_migracoes.sql'));
   await db.exec(`INSERT INTO public.martins_empresas(id, razao_social) VALUES ('${E}', 'Construtora Martins - cadastro inicial');`);
-  for (const d of ['supabase/producao/migrations', 'supabase/v2/migrations', 'supabase/v3/migrations', 'supabase/v4/migrations', 'supabase/v5/migrations', 'supabase/v6/migrations', 'supabase/v7/migrations', 'supabase/v8/migrations', 'supabase/v9/migrations'])
+  for (const d of ['supabase/producao/migrations', 'supabase/v2/migrations', 'supabase/v3/migrations', 'supabase/v4/migrations', 'supabase/v5/migrations', 'supabase/v6/migrations', 'supabase/v7/migrations', 'supabase/v8/migrations', 'supabase/v9/migrations', 'supabase/v10/migrations'])
     for (const f of fs.readdirSync(path.join(raiz, d)).sort()) await db.exec(sql(d + '/' + f));
   const [M, L] = Object.values(USUARIOS);
   await db.exec(`INSERT INTO auth.users VALUES ('${M}','master@teste.invalid'),('${L}','lancador@teste.invalid');
@@ -39,7 +39,7 @@ async function banco() {
   return db;
 }
 
-const TIPOS = { e: 'uuid', r: 'uuid', apos: 'uuid', op: 'uuid', v: 'bigint', limite: 'integer', d: 'jsonb', itens: 'jsonb', de: 'date', ate: 'date', m: 'text', estado: 'text', motivo: 'text', tipo: 'text', produto: 'uuid', origem: 'uuid', requisicao: 'uuid', usuario: 'uuid', ativo: 'boolean', email: 'text', nome: 'text', destino: 'uuid', qtd: 'bigint', ref: 'uuid', pedido: 'uuid', deposito: 'uuid', documento: 'jsonb', obra: 'uuid', rdo: 'uuid', consumo: 'uuid' };
+const TIPOS = { e: 'uuid', r: 'uuid', apos: 'uuid', op: 'uuid', v: 'bigint', limite: 'integer', d: 'jsonb', itens: 'jsonb', de: 'date', ate: 'date', m: 'text', estado: 'text', motivo: 'text', tipo: 'text', produto: 'uuid', origem: 'uuid', requisicao: 'uuid', usuario: 'uuid', ativo: 'boolean', email: 'text', nome: 'text', conta: 'uuid', valor: 'bigint', data: 'date', conta_bancaria: 'uuid', obs: 'text', baixa: 'uuid', destino: 'uuid', qtd: 'bigint', ref: 'uuid', pedido: 'uuid', deposito: 'uuid', documento: 'jsonb', obra: 'uuid', rdo: 'uuid', consumo: 'uuid' };
 async function supabase(db, route) {
   const req = route.request(), url = new URL(req.url());
   const json = (status, body) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
@@ -623,6 +623,40 @@ async function novo(page, campos) {
     await pm2.waitForSelector('#cs-painel tbody tr:has-text("Almoxarife QA"):has-text("Desativado")');
     check((await db.query(`SELECT ativo FROM public.martins_online_acessos WHERE usuario_id=$1`, [NOVO_UID])).rows[0].ativo === false, 'o Master desativa o acesso e o servidor registra');
     check(await pm2.$$eval('#cs-painel tbody tr', t => !/Desativar|Reativar/.test((t.find(r => /master@teste\.invalid/.test(r.textContent)) || { textContent: '' }).textContent)), 'o Master não vê botão para desativar o próprio acesso');
+    await pm2.evaluate(() => window.MartinsCadastrosServidor.fechar());
+
+    console.log('Contas a receber (v10)');
+    await pm2.evaluate(() => window.MartinsCadastrosServidor.abrir('contas_receber'));
+    await pm2.waitForFunction(() => /Contas a receber:/.test(document.querySelector('[data-cs=status]')?.textContent || ''), null, { timeout: 15000 });
+    await pm2.click('#cs-painel button:text-is("+ Novo")');
+    await pm2.selectOption('#cs-cliente_id', { label: 'Cliente Legado' }); await pm2.fill('#cs-descricao', 'Medição 1 QA'); await pm2.fill('#cs-valor_centavos', '1200,00'); await preencherData('#cs-vencimento', '2026-12-10');
+    await pm2.click('#cs-painel button:text-is("Salvar no servidor")');
+    await pm2.waitForSelector('#cs-painel td:has-text("Medição 1 QA")');
+    const cr = () => db.query(`SELECT dados FROM martins_producao_v1.registros WHERE modulo='contas_receber' AND dados->>'descricao'='Medição 1 QA'`).then(r => r.rows[0].dados);
+    check((await cr()).estado === 'aberta' && (await cr()).valor_centavos === 120000, 'título criado pela tela: aberto, R$ 1.200,00 (120000 centavos)');
+    await pm2.waitForSelector('[data-rec=totais]:has-text("1.200,00")');
+    check(true, 'o resumo (calculado no servidor) mostra o valor a receber');
+    const linhaCr = '#cs-painel tbody tr:has-text("Medição 1 QA")';
+    await pm2.fill(linhaCr + ' input[aria-label="Valor recebido (R$)"]', '400,00'); await pm2.click(linhaCr + ' button:text-is("Registrar recebimento")');
+    await pm2.waitForSelector(linhaCr + ':has-text("Recebida em parte")');
+    check((await cr()).recebido_centavos === 40000, 'recebimento parcial de R$ 400,00 registrado: "Recebida em parte"');
+    await pm2.fill(linhaCr + ' input[aria-label="Valor recebido (R$)"]', '9.999,00'); await pm2.click(linhaCr + ' button:text-is("Registrar recebimento")');
+    await pm2.waitForFunction(() => /maior que o saldo/.test(document.querySelector('[data-cs=status]')?.textContent || ''));
+    check((await cr()).recebido_centavos === 40000, 'receber mais que o saldo é recusado com mensagem clara');
+    await pm2.click(linhaCr + ' button:text-is("Estornar último recebimento")');
+    await pm2.waitForFunction(() => /Informe o motivo do estorno/.test(document.querySelector('[data-cs=status]')?.textContent || ''));
+    await pm2.fill(linhaCr + ' input[aria-label="Motivo"]', 'Lançado no título errado'); await pm2.click(linhaCr + ' button:text-is("Estornar último recebimento")');
+    await pm2.waitForSelector(linhaCr + ':has-text("Aberta")');
+    const crE = await cr();
+    check(crE.recebido_centavos === 0 && crE.baixas.length === 1 && crE.baixas[0].estornada === true, 'o Master estorna: título volta a "Aberta" e a baixa continua registrada como estornada');
+    await pm2.fill(linhaCr + ' input[aria-label="Motivo"]', 'Cliente desistiu'); await pm2.click(linhaCr + ' button:text-is("Cancelar título")');
+    await pm2.waitForSelector(linhaCr + ':has-text("Cancelada")');
+    check((await cr()).estado === 'cancelada', 'título sem recebimento é cancelado com motivo');
+    await pm2.evaluate(() => window.MartinsCadastrosServidor.fechar());
+    await pm2.evaluate(() => { document.body.insertAdjacentHTML('beforeend', '<form id="form-registrar-movimentacao-fin"><select id="fin-reg-tipo"><option value="ENTRADA" selected>Entrada</option></select><input id="fin-reg-descricao" value="Sinal da obra QA"><input id="fin-reg-valor" value="350"><input id="fin-reg-vencimento" value="2026-12-20"></form>'); [...document.querySelectorAll('#form-registrar-movimentacao-fin')].pop().dispatchEvent(new Event('submit', { cancelable: true, bubbles: true })); });
+    await pm2.waitForFunction(() => document.querySelector('#cs-painel .cs-form #cs-descricao')?.value === 'Sinal da obra QA', null, { timeout: 15000 });
+    check(await pm2.$eval('#cs-valor_centavos', n => n.value) === '350,00' && await pm2.$eval('#cs-vencimento', n => n.value) === '2026-12-20', 'lançar uma ENTRADA no formulário antigo do financeiro abre o cadastro de contas a receber do servidor');
+    check(await semRastroLocal(pm2, 'Medição 1 QA').then(x => x.length === 0) && await semRastroLocal(pm2, 'Sinal da obra QA').then(x => x.length === 0), 'nada de contas a receber fica no navegador');
     await pm2.evaluate(() => window.MartinsCadastrosServidor.fechar());
 
     console.log('Rodada 4: ficha, histórico, busca e mensagens');

@@ -52,6 +52,11 @@
       ['conta_bancaria_id', 'Conta bancária', 'ref', { catalogo: 'contas_bancarias', vazio: 'Não informada' }],
       ['documento_numero', 'Nº do documento', 'texto'], ['observacao', 'Observação', 'area'],
       ['confidencial', 'Despesa confidencial — visível somente aos Masters', 'sim', { somenteMaster: true }]] },
+    contas_receber: { titulo: 'Contas a receber', colunas: ['vencimento', 'cliente_id', 'descricao', 'valor_centavos', 'recebido_centavos', 'estado'], semAtivo: true, campos: [
+      ['cliente_id', 'Cliente cadastrado', 'ref', { catalogo: 'clientes', vazio: 'Outro (informe o nome abaixo)' }], ['cliente_nome', 'Nome do cliente (se não cadastrado)', 'texto'],
+      ['descricao', 'Descrição (ex.: Medição 1 - Obra X)', 'texto', { obrigatorio: true }], ['valor_centavos', 'Valor a receber (R$)', 'dinheiro', { obrigatorio: true }],
+      ['vencimento', 'Vencimento', 'data', { obrigatorio: true }], ['competencia', 'Competência', 'data'],
+      ['obra_id', 'Obra', 'ref', { catalogo: 'obras', vazio: 'Nenhuma' }], ['numero_documento', 'Nº do documento / nota', 'texto'], ['observacao', 'Observação', 'area']] },
     feriados: { titulo: 'Feriados', colunas: ['data', 'nome', 'abrangencia'], campos: [
       ['data', 'Data', 'data', { obrigatorio: true }], ['nome', 'Descrição', 'texto', { obrigatorio: true }],
       ['abrangencia', 'Abrangência', 'opcoes', { opcoes: [['municipal', 'Municipal'], ['estadual', 'Estadual'], ['nacional', 'Nacional'], ['empresa', 'Recesso da empresa']] }]] },
@@ -88,6 +93,7 @@
       ['situacao', 'Situação', 'opcoes', { opcoes: [['aberta', 'Em análise'], ['escolhida', 'Escolhida'], ['recusada', 'Recusada']] }]] },
   };
   const ORDEM = Object.keys(MODULOS);
+  const ESTADOS_REC = { aberta: 'Aberta', parcial: 'Recebida em parte', recebida: 'Recebida', cancelada: 'Cancelada' };
   const ESTADOS = { pendente_conferencia: 'Pendente de conferência', aprovado: 'Aprovado', pago: 'Pago', confirmado: 'Confirmado', conciliado: 'Conciliado', cancelado: 'Cancelado' };
   const PROXIMOS = { pendente_conferencia: ['aprovado', 'cancelado'], aprovado: ['pago', 'cancelado'], pago: ['confirmado'], confirmado: ['conciliado'] };
   const ACAO = { aprovado: 'Aprovar', pago: 'Registrar pagamento', confirmado: 'Confirmar', conciliado: 'Conciliar', cancelado: 'Cancelar' };
@@ -274,14 +280,15 @@
   function formatar(m, coluna, d) {
     const v = d[coluna];
     if (coluna === 'valor_centavos') return reais(v || 0);
-    if (coluna === 'estado') return ESTADOS[v] || v || '';
+    if (coluna === 'estado') return (m === 'contas_receber' ? ESTADOS_REC[v] : ESTADOS[v]) || v || '';
     if (coluna === 'principal') return v ? 'Principal' : '';
     if (coluna === 'funcionario_id') return rotuloRef('funcionarios', v) || 'Externo';
     if (coluna === 'centro_custo_id') return rotuloRef('centros_custo', v) || (v ? 'Inativo' : '');
     if (coluna === 'obra_id') return rotuloRef('obras', v);
-    if (coluna === 'cnh_validade' || coluna === 'competencia' || coluna === 'data') return v ? String(v).split('-').reverse().join('/') : '';
+    if (coluna === 'cnh_validade' || coluna === 'competencia' || coluna === 'vencimento' || coluna === 'data') return v ? String(v).split('-').reverse().join('/') : '';
     if (coluna === 'preco_centavos') return v === undefined || v === null ? '' : reais(v);
-    if (coluna === 'total_centavos') return reais(v || 0);
+    if (coluna === 'total_centavos' || coluna === 'recebido_centavos') return reais(v || 0);
+    if (coluna === 'cliente_id') return rotuloRef('clientes', v) || d.cliente_nome || '';
     if (coluna === 'veiculo_id') return rotuloRef('veiculos', v) || (v ? 'Inativo' : '');
     if (coluna === 'litros_milli') return v ? (Number(v) / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 3 }) + ' L' : '';
     if (coluna === 'inicio' || coluna === 'fim') return v ? String(v).split('-').reverse().join('/') : '';
@@ -582,13 +589,14 @@
     clientes: 'Clientes', fornecedores: 'Fornecedores', vendedores: 'Vendedores', motoristas: 'Motoristas', veiculos: 'Veículos', produtos: 'Produtos e materiais', depositos: 'Depósitos',
     centros_custo: 'Centros de custo', contas_bancarias: 'Contas bancárias', despesas: 'Despesas (financeiro)', feriados: 'Feriados', precos_insumo: 'Preços de insumos', epis: 'EPIs e uniformes',
     estoque_movimentos: 'Estoque (movimentações)', pedidos_compra: 'Pedidos de compra', recebimentos_compra: 'Recebimentos de compra', frota_eventos: 'Frota (abastecimento e manutenção)',
-    ausencias: 'Ausências e férias', cotacoes: 'Propostas de cotação', requisicoes_material: 'Requisições de material' };
+    ausencias: 'Ausências e férias', cotacoes: 'Propostas de cotação', requisicoes_material: 'Requisições de material', contas_receber: 'Contas a receber (vendas)' };
   // Modelos são só um atalho: preenchem a tela, o Master confere e salva. l = ver, c = criar, e = editar.
   const MODELOS = {
     'Almoxarife': { estoque_movimentos: 'lce', epis: 'lce', produtos: 'l', depositos: 'l', pedidos_compra: 'l', recebimentos_compra: 'l', requisicoes_material: 'l', obras: 'l', rdos: 'l' },
     'Engenharia': { obras: 'lce', planejamento: 'lce', rdos: 'lce', requisicoes_material: 'lce', frequencia: 'l', funcionarios: 'l', produtos: 'l', depositos: 'l', estoque_movimentos: 'l', orcamentos: 'l' },
     'RH / Departamento pessoal': { funcionarios: 'lce', frequencia: 'lce', ausencias: 'lce', epis: 'lce', feriados: 'lce', obras: 'l', rdos: 'l' },
-    'Comercial / Vendedor': { clientes: 'lce', vendedores: 'l', orcamentos: 'lce', obras: 'l' },
+    'Comercial / Vendedor': { clientes: 'lce', vendedores: 'l', orcamentos: 'lce', obras: 'l', contas_receber: 'l' },
+    'Financeiro (contas a receber)': { contas_receber: 'lce', clientes: 'l', contas_bancarias: 'l', obras: 'l', orcamentos: 'l' },
     'Lançador financeiro': { despesas: 'lc', fornecedores: 'l', centros_custo: 'l', contas_bancarias: 'l', obras: 'l' },
     'Compras': { pedidos_compra: 'lce', fornecedores: 'lce', cotacoes: 'lce', produtos: 'l', precos_insumo: 'lce', centros_custo: 'l', obras: 'l' },
     'Somente leitura (sem financeiro)': Object.fromEntries(Object.keys(ROTULO_MOD).filter(m => !['despesas', 'contas_bancarias'].includes(m)).map(m => [m, 'l'])),
@@ -681,10 +689,52 @@
     }
     return caixa;
   }
+  // ---------- Contas a receber (v10) ----------
+  // Data de HOJE no fuso do aparelho (toISOString usa UTC e, à noite no Brasil, já é "amanhã").
+  const hojeLocal = () => { const h = new Date(); return h.getFullYear() + '-' + String(h.getMonth() + 1).padStart(2, '0') + '-' + String(h.getDate()).padStart(2, '0'); };
+  function acoesReceber(reg) {
+    const d = reg.dados, atual = d.estado || 'aberta';
+    const caixa = el('div', { classe: 'cs-estado', onclick: ev => ev.stopPropagation(), onkeydown: ev => ev.stopPropagation() });
+    caixa.append(el('span', { classe: 'cs-selo cs-' + (atual === 'recebida' ? 'conciliado' : atual === 'cancelada' ? 'cancelado' : 'pendente_conferencia'), texto: ESTADOS_REC[atual] || atual }));
+    if (!pode('contas_receber', 'editar') && !master()) return caixa;
+    const saldo = Number(d.valor_centavos || 0) - Number(d.recebido_centavos || 0);
+    const rodar = async (ev, fn, ok) => { ev.stopPropagation(); try { await fn(); mensagem(ok); await carregarAba(); } catch (e) { mensagem(traduzir(e), true); } };
+    const rev = Number(reg.revisao);
+    if (['aberta', 'parcial'].includes(atual) && pode('contas_receber', 'editar')) {
+      const valor = el('input', { type: 'text', inputmode: 'decimal', value: (saldo / 100).toFixed(2).replace('.', ','), 'aria-label': 'Valor recebido (R$)', size: '9' });
+      const data = el('input', { type: 'date', value: hojeLocal(), 'aria-label': 'Data do recebimento' });
+      const conta = el('select', { 'aria-label': 'Conta bancária do recebimento' }); conta.add(new Option('Conta (opcional)', '')); for (const c of catalogos.contas_bancarias || []) conta.add(new Option(c.nome, c.id));
+      const motivo = el('input', { type: 'text', placeholder: 'Motivo (cancelar/estornar)', 'aria-label': 'Motivo' });
+      caixa.append(valor, data, conta, motivo,
+        el('button', { type: 'button', classe: 'cs-primario', texto: 'Registrar recebimento', disabled: !gravacao(), onclick: ev => rodar(ev, async () => {
+          await W.MartinsProducaoRpc.receberBaixar({ e: empresa, op: crypto.randomUUID(), conta: reg.id, v: rev, valor: centavos(valor.value), data: data.value, conta_bancaria: conta.value || null, obs: null }); }, 'Recebimento registrado e confirmado pelo servidor.') }));
+      if (atual === 'aberta' && !Number(d.recebido_centavos)) caixa.append(el('button', { type: 'button', classe: 'cs-perigo', texto: 'Cancelar título', disabled: !gravacao(), onclick: ev => { if (!motivo.value.trim()) { ev.stopPropagation(); motivo.focus(); mensagem('Informe o motivo do cancelamento.', true); return; }
+        return rodar(ev, () => W.MartinsProducaoRpc.receberEstado({ e: empresa, op: crypto.randomUUID(), conta: reg.id, v: rev, estado: 'cancelada', motivo: motivo.value.trim() }), 'Título cancelado.'); } }));
+      if (master() && atual === 'parcial') caixa.append(estornoBotao(reg, rev, motivo, rodar));
+    } else if (master() && atual === 'recebida') {
+      const motivo = el('input', { type: 'text', placeholder: 'Motivo do estorno', 'aria-label': 'Motivo do estorno' });
+      caixa.append(motivo, estornoBotao(reg, rev, motivo, rodar));
+    }
+    return caixa;
+  }
+  function estornoBotao(reg, rev, motivo, rodar) {
+    const ultima = [...(reg.dados.baixas || [])].reverse().find(b => !b.estornada);
+    return el('button', { type: 'button', classe: 'cs-perigo', texto: 'Estornar último recebimento', disabled: !gravacao() || !ultima, onclick: ev => {
+      if (!motivo.value.trim()) { ev.stopPropagation(); motivo.focus(); mensagem('Informe o motivo do estorno.', true); return; }
+      return rodar(ev, () => W.MartinsProducaoRpc.receberEstornar({ e: empresa, op: crypto.randomUUID(), conta: reg.id, v: rev, baixa: ultima.id, motivo: motivo.value.trim() }), 'Recebimento estornado; ele continua registrado no histórico.'); } });
+  }
+  async function desenharTotaisReceber(alvo) {
+    const caixa = el('section', { classe: 'cs-totais', 'data-rec': 'totais' }, el('h4', { texto: 'Resumo (calculado no servidor)' }));
+    alvo.append(caixa);
+    try {
+      const t = await W.MartinsProducaoRpc.receberTotais(empresa);
+      caixa.append(el('div', { texto: 'A receber: ' + reais(t.a_receber_centavos) + ' em ' + t.titulos_abertos + ' título(s)' }), el('div', { texto: 'Vencido: ' + reais(t.vencido_centavos) }), el('div', { texto: 'Recebido neste mês: ' + reais(t.recebido_mes_centavos) }));
+    } catch (e) { caixa.append(el('span', { classe: 'cs-erro', texto: traduzir(e) })); }
+  }
   async function desenharTotais(alvo) {
     if (!(master() || vinculo()?.papelServidor === 'administrador')) return;
     const hoje = new Date(); const de = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
-    const iso = d => d.toISOString().slice(0, 10);
+    const iso = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
     const ini = el('input', { type: 'date', value: iso(de), 'aria-label': 'Início do período' });
     const fim = el('input', { type: 'date', value: iso(hoje), 'aria-label': 'Fim do período' });
     const saida = el('div', { classe: 'cs-totais-saida' });
@@ -709,7 +759,7 @@
       pode(aba, 'criar') ? el('button', { type: 'button', classe: 'cs-primario', texto: '+ Novo', onclick: () => abrirFormulario(null) }) : null,
       aba === 'despesas' && W.MartinsPainelServidor ? el('button', { type: 'button', classe: 'cs-secundario', texto: 'Exportar CSV', onclick: () => W.MartinsPainelServidor.exportarDespesasCsv().catch(e => mensagem(traduzir(e), true)) }) : null);
     const tabela = el('table', { classe: 'cs-tabela' });
-    tabela.append(el('thead', {}, el('tr', {}, def.colunas.map(c => el('th', { texto: (def.campos.find(x => x[0] === c)?.[1] || c).replace(/ \(.+\)$/, '') })), aba === 'despesas' ? null : el('th', { texto: 'Situação' }), el('th', { texto: 'Histórico' }))));
+    tabela.append(el('thead', {}, el('tr', {}, def.colunas.map(c => el('th', { texto: (def.campos.find(x => x[0] === c)?.[1] || c).replace(/ \(.+\)$/, '') })), def.semAtivo ? null : el('th', { texto: 'Situação' }), el('th', { texto: 'Histórico' }))));
     const tbody = el('tbody');
     const linhas = [...registros.values()].sort((a, b) => String(b.dados.competencia || '').localeCompare(String(a.dados.competencia || '')) || String(a.dados.nome || a.dados.descricao || '').localeCompare(String(b.dados.nome || b.dados.descricao || '')));
     const render = () => {
@@ -720,8 +770,8 @@
       contagem.textContent = q ? achados.length + ' de ' + linhas.length + ' registro(s)' : linhas.length + ' registro(s)';
       tbody.replaceChildren(...achados.map(r => {
         const tr = el('tr', { tabindex: 0, onclick: () => pode(aba, 'editar') && abrirFormulario(r), onkeydown: ev => ev.key === 'Enter' && pode(aba, 'editar') && abrirFormulario(r) },
-          def.colunas.map(c => el('td', { 'data-rotulo': (def.campos.find(x => x[0] === c)?.[1] || c), texto: c === 'estado' ? null : String(formatar(aba, c, r.dados)) }, c === 'estado' ? acoesDespesa(r) : null)),
-          aba === 'despesas' ? null : el('td', { 'data-rotulo': 'Situação', texto: r.dados.ativo === false ? 'Inativo' : 'Ativo' }),
+          def.colunas.map(c => el('td', { 'data-rotulo': (def.campos.find(x => x[0] === c)?.[1] || c), texto: c === 'estado' ? null : String(formatar(aba, c, r.dados)) }, c === 'estado' ? (aba === 'contas_receber' ? acoesReceber(r) : acoesDespesa(r)) : null)),
+          def.semAtivo ? null : el('td', { 'data-rotulo': 'Situação', texto: r.dados.ativo === false ? 'Inativo' : 'Ativo' }),
           el('td', { 'data-rotulo': 'Histórico', onclick: ev => ev.stopPropagation() }, el('button', { type: 'button', classe: 'cs-secundario', texto: 'Histórico', 'aria-label': 'Ver histórico de alterações', onclick: ev => { ev.stopPropagation(); mostrarHistorico(r); } })));
         if (r.dados.ativo === false) tr.classList.add('cs-inativo');
         return tr;
@@ -732,6 +782,7 @@
     tabela.append(tbody); render();
     corpo.replaceChildren(topo, el('div', { classe: 'cs-rolagem' }, tabela));
     if (aba === 'despesas') desenharTotais(corpo);
+    if (aba === 'contas_receber') desenharTotaisReceber(corpo);
   }
   function desenharAbas() {
     const nav = painel.querySelector('[data-cs=abas]');
@@ -942,7 +993,7 @@
     form.closest('[id^=modal-]')?.classList.add('hidden');
     if (BLOQUEADOS[id]) { avisar(BLOQUEADOS[id]); return; }
     if (id === 'form-registrar-movimentacao-fin' && /entrada|receita|receb/i.test(form.querySelector('#fin-reg-tipo')?.value || '')) {
-      avisar('Entradas e contas a receber ainda não estão no servidor. Somente despesas (saídas) são lançadas por enquanto.'); return;
+      abrir('contas_receber', lerLegado(form, { 'fin-reg-descricao': 'descricao', 'fin-reg-valor': 'valor_centavos:dinheiro', 'fin-reg-vencimento': 'vencimento' })); return;
     }
     const [modulo, mapa] = LEGADOS[chave];
     const preenchimento = lerLegado(form, mapa);

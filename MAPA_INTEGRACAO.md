@@ -156,3 +156,17 @@ Dos 52 formulários do sistema, nenhum formulário de **cadastro** grava mais s�
 Sem mudança no banco. Em **Compras → Receber**, o botão de arquivo lê o XML da NF-e **no próprio navegador** (nada vai a terceiros) e **só preenche** o formulário: número da nota (sem zeros à esquerda), chave de acesso (44 dígitos) e a quantidade dos itens que casam com o pedido **pelo código do produto**. Itens sem correspondência ficam de fora e a tela avisa; se o CNPJ/CPF do emitente não é o do fornecedor do pedido, aparece um alerta. XML com DOCTYPE/ENTITY, arquivo que não é NF-e e arquivo grande demais são recusados. Quem grava e impede a nota duplicada continua sendo o servidor (v5).
 
 Ainda não faz: casar item por descrição, criar produto ou fornecedor a partir do XML, ler preços/impostos, nem importar NF de venda.
+
+## Contas a receber (v10, 16/11/2026)
+
+`supabase/v10`: módulo `contas_receber` (Vendas) na aba "Contas a receber". Fecha o módulo de Vendas: orçamentos (v1) → título a receber → recebimentos.
+
+- **Título:** cliente cadastrado (ou só o nome), descrição, valor, vencimento, obra, orçamento e nº do documento. Só se edita enquanto "aberta" e sem recebimento. **Estado, valor recebido e baixas são do servidor.**
+- **Recebimento parcial ou total:** valor, data (não futura) e conta bancária opcional. Nunca passa do saldo. Estados: aberta → recebida em parte → recebida.
+- **Cancelar:** só título aberto e sem recebimento, com motivo.
+- **Estornar recebimento:** exclusivo do Master, com motivo; a baixa **não é apagada**, fica marcada como estornada, e o título volta a "parcial" ou "aberta".
+- **Resumo no servidor:** a receber, vencido, nº de títulos abertos e recebido no mês (ignora estornos).
+- **Formulário antigo do financeiro:** lançar uma ENTRADA abre o cadastro de contas a receber já preenchido.
+- **Também corrigido:** a data "hoje" sugerida nas telas usava UTC e, à noite no Brasil, virava "amanhã" (o servidor recusaria como data futura). Agora usa a data local.
+- **A v10 ampliou a lista de módulos de `martins_producao_permissoes_definir` (v9).** O validador v10 garante que a tela de permissões aceita todos os módulos do contexto.
+- **Ainda falta:** conciliação bancária (extratos), emissão de boleto/NF, previsão de recebimento por medição e relatório de inadimplência.

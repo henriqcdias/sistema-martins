@@ -119,3 +119,13 @@ Dos 52 formulários do sistema, nenhum formulário de **cadastro** grava mais s�
 ## Consumo de materiais na obra (v6, 16/11/2026)
 
 `supabase/v6`: consumo de material por **obra**, opcionalmente por **RDO**, com baixa única no estoque. O RDO guarda os materiais como texto livre, por isso o consumo é um evento explícito (obra, RDO, depósito, material e quantidade) na aba Estoque. Regras no banco: um material só é baixado **uma vez por RDO**; consumo nunca passa do saldo e um lote com item sem saldo é recusado inteiro; RDO precisa ser da obra; correção por **devolução** limitada ao consumido (o estorno de consumo é bloqueado); consulta do consumo líquido por obra (`martins_producao_obra_materiais`). **Ainda faltam:** requisição de materiais da obra (solicitar → entregar), vínculo do texto do RDO com os itens e custo apropriado à obra (Gastos).
+
+## Frota, ausências/férias e cotações (v7, 16/11/2026)
+
+`supabase/v7`: três módulos que ainda gravavam só no navegador passam a ser cadastros do servidor (Cadastros e Despesas). Os formulários antigos são interceptados e abrem o cadastro do servidor já preenchido; `submeterAbastecimentoFrotaUi` fica bloqueada.
+
+- **Frota (`frota_eventos`)**: abastecimento e manutenção por veículo. Litros em milésimos, valor em centavos, data não pode ser futura, motorista e obra precisam ser da empresa; o mesmo abastecimento (veículo + data + km) não entra duas vezes.
+- **Ausências e férias (`ausencias`)**: falta, atestado, folga e férias. O servidor calcula os dias e **recusa período que coincide com outra ausência do mesmo funcionário**. Sem data final vale um dia.
+- **Propostas de cotação (`cotacoes`)**: fornecedor cadastrado ou só o nome, subtotal, frete e desconto; o **total é calculado no servidor** e o desconto não passa do valor.
+- **Vendas:** orçamentos já estavam no servidor (v1). **Contas a receber / pedidos de venda ainda não.**
+- **Limite conhecido:** a proposta de cotação ainda não se liga à requisição de cotação, que continua local; por isso leva uma "referência" digitada.

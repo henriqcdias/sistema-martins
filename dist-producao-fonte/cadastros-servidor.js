@@ -66,6 +66,24 @@
     epis: { titulo: 'EPIs e uniformes', colunas: ['codigo', 'nome', 'tamanho', 'estoque_minimo'], campos: [
       ['nome', 'Descrição', 'texto', { obrigatorio: true }], ['codigo', 'Código de referência', 'texto'], ['categoria', 'Categoria', 'texto'],
       ['tamanho', 'Tamanho / numeração', 'texto'], ['preco_centavos', 'Preço unitário de custo (R$)', 'dinheiro'], ['estoque_minimo', 'Estoque mínimo para alerta', 'numero']] },
+    frota_eventos: { titulo: 'Frota (abastecimentos e manutenções)', colunas: ['data', 'tipo', 'veiculo_id', 'litros_milli', 'valor_centavos'], campos: [
+      ['tipo', 'Tipo', 'opcoes', { opcoes: [['abastecimento', 'Abastecimento'], ['manutencao', 'Manutenção']], obrigatorio: true }],
+      ['veiculo_id', 'Veículo', 'ref', { catalogo: 'veiculos', vazio: 'Selecione', obrigatorio: true }], ['data', 'Data', 'data', { obrigatorio: true }],
+      ['km', 'Quilometragem (odômetro)', 'numero'], ['litros', 'Litros (só abastecimento)', 'numero'], ['valor_centavos', 'Valor (R$)', 'dinheiro', { obrigatorio: true }],
+      ['posto', 'Posto ou oficina', 'texto'], ['motorista_id', 'Motorista', 'ref', { catalogo: 'motoristas', vazio: 'Não informado' }],
+      ['obra_id', 'Obra atendida', 'ref', { catalogo: 'obras', vazio: 'Nenhuma' }], ['descricao', 'Serviço realizado (manutenção)', 'area']] },
+    ausencias: { titulo: 'Ausências e férias', colunas: ['funcionario_id', 'tipo', 'inicio', 'fim', 'dias', 'situacao'], campos: [
+      ['funcionario_id', 'Funcionário', 'ref', { catalogo: 'funcionarios', vazio: 'Selecione', obrigatorio: true }],
+      ['tipo', 'Tipo', 'opcoes', { opcoes: [['falta', 'Falta'], ['atestado_medico', 'Atestado médico'], ['folga', 'Folga'], ['ferias', 'Férias']], obrigatorio: true }],
+      ['inicio', 'Início', 'data', { obrigatorio: true }], ['fim', 'Fim (vazio = um dia)', 'data'],
+      ['situacao', 'Situação', 'opcoes', { opcoes: [['confirmado', 'Confirmado'], ['programado', 'Programado'], ['em_analise', 'Em análise'], ['em_andamento', 'Em andamento'], ['usufruido', 'Usufruído']] }],
+      ['motivo', 'Motivo / observação', 'texto']] },
+    cotacoes: { titulo: 'Propostas de cotação', colunas: ['referencia', 'fornecedor_id', 'total_centavos', 'prazo_dias', 'situacao'], campos: [
+      ['referencia', 'O que está sendo cotado', 'texto', { obrigatorio: true }],
+      ['fornecedor_id', 'Fornecedor cadastrado', 'ref', { catalogo: 'fornecedores', vazio: 'Outro (informe o nome abaixo)' }], ['fornecedor_nome', 'Nome do fornecedor (se não cadastrado)', 'texto'],
+      ['subtotal_centavos', 'Subtotal (R$)', 'dinheiro', { obrigatorio: true }], ['frete_centavos', 'Frete (R$)', 'dinheiro'], ['desconto_centavos', 'Desconto (R$)', 'dinheiro'],
+      ['prazo_dias', 'Prazo de entrega (dias)', 'numero'], ['condicao', 'Condição de pagamento', 'texto'],
+      ['situacao', 'Situação', 'opcoes', { opcoes: [['aberta', 'Em análise'], ['escolhida', 'Escolhida'], ['recusada', 'Recusada']] }]] },
   };
   const ORDEM = Object.keys(MODULOS);
   const ESTADOS = { pendente_conferencia: 'Pendente de conferência', aprovado: 'Aprovado', pago: 'Pago', confirmado: 'Confirmado', conciliado: 'Conciliado', cancelado: 'Cancelado' };
@@ -130,6 +148,7 @@
     const cat = await W.MartinsProducaoRpc.catalogos(empresa);
     if (cat?.empresa_id !== empresa) throw Error('Catálogo inválido.');
     catalogos = cat;
+    if (pode('veiculos', 'ler')) catalogos.veiculos = [...(await listarTodos('veiculos'))].filter(r => r.dados.ativo !== false).map(r => ({ id: r.id, codigo: r.dados.placa, nome: r.dados.modelo }));
     if (pode('motoristas', 'ler')) catalogos.motoristas = [...(await listarTodos('motoristas'))].map(r => ({ id: r.id, nome: r.dados.nome || rotuloRef('funcionarios', r.dados.funcionario_id) }));
   }
   async function listarTodos(m) {
@@ -246,6 +265,8 @@
     corpo.replaceChildren(form);
     form.querySelector('input,select,textarea')?.focus();
   }
+  const ROTULOS_TIPO = { abastecimento: 'Abastecimento', manutencao: 'Manutenção', falta: 'Falta', atestado_medico: 'Atestado médico', folga: 'Folga', ferias: 'Férias' };
+  const ROTULOS_SIT = { confirmado: 'Confirmado', programado: 'Programado', em_analise: 'Em análise', em_andamento: 'Em andamento', usufruido: 'Usufruído', aberta: 'Em análise', escolhida: 'Escolhida', recusada: 'Recusada' };
   function formatar(m, coluna, d) {
     const v = d[coluna];
     if (coluna === 'valor_centavos') return reais(v || 0);
@@ -256,6 +277,15 @@
     if (coluna === 'obra_id') return rotuloRef('obras', v);
     if (coluna === 'cnh_validade' || coluna === 'competencia' || coluna === 'data') return v ? String(v).split('-').reverse().join('/') : '';
     if (coluna === 'preco_centavos') return v === undefined || v === null ? '' : reais(v);
+    if (coluna === 'total_centavos') return reais(v || 0);
+    if (coluna === 'veiculo_id') return rotuloRef('veiculos', v) || (v ? 'Inativo' : '');
+    if (coluna === 'litros_milli') return v ? (Number(v) / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 3 }) + ' L' : '';
+    if (coluna === 'inicio' || coluna === 'fim') return v ? String(v).split('-').reverse().join('/') : '';
+    if (coluna === 'dias') return v ? v + (Number(v) === 1 ? ' dia' : ' dias') : '';
+    if (coluna === 'prazo_dias') return v === undefined || v === null ? '' : v + ' dias';
+    if (coluna === 'fornecedor_id' && m === 'cotacoes') return rotuloRef('fornecedores', v) || d.fornecedor_nome || '';
+    if (coluna === 'tipo' && ROTULOS_TIPO[v]) return ROTULOS_TIPO[v];
+    if (coluna === 'situacao' && ROTULOS_SIT[v]) return ROTULOS_SIT[v];
     if (coluna === 'abrangencia') return { municipal: 'Municipal', estadual: 'Estadual', nacional: 'Nacional', empresa: 'Recesso da empresa' }[v] || v || '';
     if (coluna === 'nome' && !v && d.funcionario_id) return rotuloRef('funcionarios', d.funcionario_id);
     return v ?? '';
@@ -679,6 +709,10 @@
     'form-completo-pedido-compra-fase23': ['compras', {}],
     'form-movimento-estoque': ['estoque', {}],
     'form-movimentacao-entrada-saida-fase22': ['estoque', {}],
+    'form-abastecimento-manutencao-frota': ['frota_eventos', { 'frota-ev-tipo': 'tipo:minusculo', 'frota-ev-km': 'km:numero', 'frota-ev-litros': 'litros:numero', 'frota-ev-valor': 'valor_centavos:dinheiro', 'frota-ev-posto': 'posto' }],
+    'form-registro-ausencia-rh-estab': ['ausencias', { 'aus-inp-tipo': 'tipo:minusculo', 'aus-inp-inicio': 'inicio', 'aus-inp-fim': 'fim', 'aus-inp-motivo': 'motivo', 'aus-inp-situacao': 'situacao:situacao' }],
+    'form-plano-ferias-fase22': ['ausencias', { 'pf-inp-inicio': 'inicio', 'pf-inp-fim': 'fim', 'pf-inp-situacao': 'situacao:situacao', 'pf-inp-obs': 'motivo' }],
+    'form-lancar-proposta-cotacao-f29': ['cotacoes', { 'cot29-fornecedor': 'fornecedor_nome', 'cot29-subtotal': 'subtotal_centavos:dinheiro', 'cot29-frete': 'frete_centavos:dinheiro', 'cot29-desconto': 'desconto_centavos:dinheiro', 'cot29-prazo': 'prazo_dias:numero', 'cot29-condicao': 'condicao' }],
     'form-registrar-movimentacao-fin': ['despesas', { 'fin-reg-descricao': 'descricao', 'fin-reg-valor': 'valor_centavos:dinheiro', 'fin-reg-vencimento': 'vencimento' }],
   };
   // Não viram cadastro: contas de acesso nascem no Supabase Auth; empresas são provisionadas no banco.
@@ -693,6 +727,10 @@
     if (tipo === 'dinheiro') { try { return centavos(String(valor).includes(',') ? valor : String(valor).replace('.', ',')); } catch { return undefined; } }
     if (tipo === 'minusculo') return String(valor).toLowerCase();
     if (tipo === 'maiusculo') return String(valor).toUpperCase();
+    if (tipo === 'situacao') {
+      const s = String(valor).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim().replace(/\s+/g, '_');
+      return { programadas: 'programado', usufruidas: 'usufruido' }[s] || s;
+    }
     if (tipo === 'escopo') return /obra/i.test(valor) ? 'obra' : 'administrativo';
     return valor;
   }
@@ -719,7 +757,9 @@
       avisar('Entradas e contas a receber ainda não estão no servidor. Somente despesas (saídas) são lançadas por enquanto.'); return;
     }
     const [modulo, mapa] = LEGADOS[chave];
-    abrir(modulo, lerLegado(form, mapa));
+    const preenchimento = lerLegado(form, mapa);
+    if (id === 'form-plano-ferias-fase22') { preenchimento.tipo = 'ferias'; preenchimento.situacao = preenchimento.situacao || 'programado'; }
+    abrir(modulo, preenchimento);
   }, true);
 
   // Defesa em profundidade: funções legadas que criam/alteram cadastros direto no navegador ficam
@@ -730,7 +770,7 @@
     salvarNovoDepositoFormUi: 'depositos', cadastrarOuEditarDepositoEstoque: 'depositos', cadastrarDepositoEstoqueRapido: 'depositos',
     salvarItemOuSubitemCentroCustoFase22: 'centros_custo', cadastrarOuEditarCentroDeCusto: 'centros_custo',
     salvarContaBancariaEstab: 'contas_bancarias', salvarEdicaoContaBancariaV171: 'contas_bancarias', cadastrarOuEditarContaCorrenteBancaria: 'contas_bancarias',
-    salvarMovimentoEstoqueForm: 'estoque', registrarEntradaOuSaidaEstoqueFase22: 'estoque', submeterFormularioPrincipalClienteUi: 'clientes', salvarNovoClienteRapidoForm: 'clientes',
+    submeterAbastecimentoFrotaUi: 'frota_eventos', salvarMovimentoEstoqueForm: 'estoque', registrarEntradaOuSaidaEstoqueFase22: 'estoque', submeterFormularioPrincipalClienteUi: 'clientes', salvarNovoClienteRapidoForm: 'clientes',
   };
   // Só reage com aviso/painel quando a chamada vem de uma ação recente da pessoa; chamadas automáticas
   // do código legado (ex.: semear dados de demonstração na carga) são recusadas em silêncio.

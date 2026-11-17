@@ -32,3 +32,5 @@ jobs:
         run: node supabase/v5/validar-v5.cjs .
       - name: Contratos v6 (consumo na obra)
         run: node supabase/v6/validar-v6.cjs .
+      - name: Contratos v7 (frota, ausências e cotações)
+        run: node supabase/v7/validar-v7.cjs .

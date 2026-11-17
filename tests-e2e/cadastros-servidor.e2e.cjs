@@ -29,7 +29,7 @@ async function banco() {
     CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$ SELECT nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;`);
   await db.exec(sql('supabase/producao/base/estrutura_anterior_as_migracoes.sql'));
   await db.exec(`INSERT INTO public.martins_empresas(id, razao_social) VALUES ('${E}', 'Construtora Martins - cadastro inicial');`);
-  for (const d of ['supabase/producao/migrations', 'supabase/v2/migrations', 'supabase/v3/migrations', 'supabase/v4/migrations', 'supabase/v5/migrations', 'supabase/v6/migrations'])
+  for (const d of ['supabase/producao/migrations', 'supabase/v2/migrations', 'supabase/v3/migrations', 'supabase/v4/migrations', 'supabase/v5/migrations', 'supabase/v6/migrations', 'supabase/v7/migrations'])
     for (const f of fs.readdirSync(path.join(raiz, d)).sort()) await db.exec(sql(d + '/' + f));
   const [M, L] = Object.values(USUARIOS);
   await db.exec(`INSERT INTO auth.users VALUES ('${M}','master@teste.invalid'),('${L}','lancador@teste.invalid');
@@ -490,6 +490,62 @@ async function novo(page, campos) {
     check(Number((await db.query(`SELECT martins_producao_v1.saldo($1,$2,$3) s`, [E, PA, DA])).rows[0].s) === 18500, 'devolver 0,5 volta ao depósito: 18 → 18,5');
     check(await pm2.$$eval('#cs-painel tbody tr', t => t.filter(r => /Consumo na obra|Devolução da obra/.test(r.textContent) && [...r.querySelectorAll('button')].some(b => b.textContent === 'Estornar')).length === 0), 'consumo e devolução da obra não oferecem "Estornar" (a correção é a devolução)');
     await pm2.evaluate(() => window.MartinsCadastrosServidor.fechar());
+
+    console.log('Frota, ausências e cotações (v7)');
+    const VEIC = '00000000-0000-4000-8000-0000000000f1';
+    await db.query(`INSERT INTO martins_producao_v1.registros(empresa_id,modulo,id,revisao,dados,criado_por,atualizado_por) VALUES ($1,'veiculos',$2,1,$3::jsonb,$4,$4)`, [E, VEIC, JSON.stringify({ placa: 'E2E1A11', modelo: 'Caminhonete QA', ativo: true }), (await db.query(`SELECT id FROM auth.users LIMIT 1`)).rows[0].id]);
+    const funcQa = (await db.query(`SELECT id FROM martins_producao_v1.registros WHERE modulo='funcionarios' ORDER BY criado_em LIMIT 1`)).rows[0].id;
+    const preencherData = (id, v) => pm2.$eval(id, (n, valor) => { n.value = valor; }, v);
+    const erroVisivel = (re) => pm2.waitForFunction(r => [...document.querySelectorAll('#cs-painel .cs-erro')].some(n => new RegExp(r).test(n.textContent)), re.source);
+    // legado: o formulário antigo de abastecimento abre o cadastro do servidor
+    await pm2.evaluate(() => { document.body.insertAdjacentHTML('beforeend', '<form id="form-abastecimento-manutencao-frota"><select id="frota-ev-tipo"><option value="ABASTECIMENTO" selected>A</option></select><input id="frota-ev-km" value="15000"><input id="frota-ev-litros" value="40"><input id="frota-ev-valor" value="280"><input id="frota-ev-posto" value="Posto QA"></form>'); document.getElementById('form-abastecimento-manutencao-frota').dispatchEvent(new Event('submit', { cancelable: true, bubbles: true })); });
+    await pm2.waitForSelector('#cs-painel .cs-form #cs-veiculo_id', { timeout: 15000 });
+    check(await pm2.$eval('#cs-tipo', n => n.value) === 'abastecimento' && await pm2.$eval('#cs-km', n => n.value) === '15000' && await pm2.$eval('#cs-posto', n => n.value) === 'Posto QA', 'o formulário antigo de abastecimento abre o cadastro de frota do servidor já preenchido');
+    await pm2.selectOption('#cs-veiculo_id', VEIC); await preencherData('#cs-data', '2026-11-10');
+    await pm2.click('#cs-painel button:text-is("Salvar no servidor")');
+    await pm2.waitForSelector('#cs-painel td:has-text("E2E1A11")');
+    const ab = (await db.query(`SELECT dados FROM martins_producao_v1.registros WHERE modulo='frota_eventos'`)).rows;
+    check(ab.length === 1 && ab[0].dados.litros_milli === 40000 && ab[0].dados.valor_centavos === 28000, 'abastecimento gravado no servidor: 40 L (40000 milésimos) e R$ 280,00 (28000 centavos)');
+    check(await pm2.$eval('#cs-painel tbody', n => /40 L/.test(n.innerText) && /R\$\s*280,00/.test(n.innerText) && /Abastecimento/.test(n.innerText)), 'a tabela mostra litros, valor e tipo legíveis');
+    await pm2.click('#cs-painel button:text-is("+ Novo")');
+    await pm2.selectOption('#cs-tipo', 'abastecimento'); await pm2.selectOption('#cs-veiculo_id', VEIC); await preencherData('#cs-data', '2026-11-10');
+    await pm2.fill('#cs-km', '15000'); await pm2.fill('#cs-litros', '30'); await pm2.fill('#cs-valor_centavos', '210,00');
+    await pm2.click('#cs-painel button:text-is("Salvar no servidor")');
+    await erroVisivel(/Já existe/);
+    check((await db.query(`SELECT count(*)::int n FROM martins_producao_v1.registros WHERE modulo='frota_eventos'`)).rows[0].n === 1, 'o mesmo abastecimento (veículo, data e km) não é gravado duas vezes');
+    check(await semRastroLocal(pm2, 'Posto QA').then(x => x.length === 0), 'nada do abastecimento fica no navegador');
+    await pm2.evaluate(() => window.MartinsCadastrosServidor.fechar());
+
+    await pm2.evaluate(() => window.MartinsCadastrosServidor.abrir('ausencias'));
+    await pm2.waitForFunction(() => /Ausências e férias:/.test(document.querySelector('[data-cs=status]')?.textContent || ''), null, { timeout: 15000 });
+    const novaAusencia = async (ini, fim) => {
+      await pm2.click('#cs-painel button:text-is("+ Novo")');
+      await pm2.selectOption('#cs-funcionario_id', funcQa); await pm2.selectOption('#cs-tipo', 'falta'); await preencherData('#cs-inicio', ini); await preencherData('#cs-fim', fim);
+      await pm2.click('#cs-painel button:text-is("Salvar no servidor")');
+    };
+    await novaAusencia('2026-11-02', '2026-11-03');
+    await pm2.waitForSelector('#cs-painel td:has-text("2 dias")');
+    check((await db.query(`SELECT (dados->>'dias')::int d FROM martins_producao_v1.registros WHERE modulo='ausencias'`)).rows[0].d === 2, 'ausência gravada; os dias (2) são calculados pelo servidor');
+    await novaAusencia('2026-11-03', '2026-11-05');
+    await erroVisivel(/coincide com o período/);
+    check((await db.query(`SELECT count(*)::int n FROM martins_producao_v1.registros WHERE modulo='ausencias'`)).rows[0].n === 1, 'período sobreposto para o mesmo funcionário é recusado com mensagem clara');
+    await pm2.evaluate(() => window.MartinsCadastrosServidor.fechar());
+    await pm2.evaluate(() => { document.body.insertAdjacentHTML('beforeend', '<form id="form-plano-ferias-fase22"><input id="pf-inp-inicio" value="2026-12-01"><input id="pf-inp-fim" value="2026-12-30"><select id="pf-inp-situacao"><option selected>Programadas</option></select><input id="pf-inp-obs" value="Férias coletivas"></form>'); document.getElementById('form-plano-ferias-fase22').dispatchEvent(new Event('submit', { cancelable: true, bubbles: true })); });
+    await pm2.waitForFunction(() => document.querySelector('#cs-painel .cs-form #cs-tipo')?.value === 'ferias', null, { timeout: 15000 });
+    check(await pm2.$eval('#cs-tipo', n => n.value) === 'ferias' && await pm2.$eval('#cs-situacao', n => n.value) === 'programado', 'o plano de férias antigo abre o cadastro do servidor como férias programadas');
+    await pm2.selectOption('#cs-funcionario_id', funcQa); await pm2.click('#cs-painel button:text-is("Salvar no servidor")');
+    await pm2.waitForSelector('#cs-painel td:has-text("30 dias")');
+    check((await db.query(`SELECT 1 FROM martins_producao_v1.registros WHERE modulo='ausencias' AND dados->>'tipo'='ferias' AND dados->>'situacao'='programado'`)).rows.length === 1, 'férias programadas gravadas no servidor');
+    await pm2.evaluate(() => window.MartinsCadastrosServidor.fechar());
+
+    await pm2.evaluate(() => { document.body.insertAdjacentHTML('beforeend', '<form id="form-lancar-proposta-cotacao-f29"><input id="cot29-fornecedor" value="Distribuidora QA"><input id="cot29-subtotal" value="1000"><input id="cot29-frete" value="50"><input id="cot29-desconto" value="20"><input id="cot29-prazo" value="7"><input id="cot29-condicao" value="28 dias"></form>'); document.getElementById('form-lancar-proposta-cotacao-f29').dispatchEvent(new Event('submit', { cancelable: true, bubbles: true })); });
+    await pm2.waitForSelector('#cs-painel .cs-form #cs-referencia', { timeout: 15000 });
+    check(await pm2.$eval('#cs-fornecedor_nome', n => n.value) === 'Distribuidora QA' && await pm2.$eval('#cs-subtotal_centavos', n => n.value) === '1000,00', 'a proposta antiga de cotação abre o cadastro do servidor preenchido');
+    await pm2.fill('#cs-referencia', 'Cimento CP-II 50 kg'); await pm2.click('#cs-painel button:text-is("Salvar no servidor")');
+    await pm2.waitForSelector('#cs-painel td:has-text("Distribuidora QA")');
+    check((await db.query(`SELECT (dados->>'total_centavos')::bigint t FROM martins_producao_v1.registros WHERE modulo='cotacoes'`)).rows[0].t === 103000, 'proposta gravada; o total (R$ 1.030,00) é calculado pelo servidor');
+    await pm2.evaluate(() => window.MartinsCadastrosServidor.fechar());
+    check(await semRastroLocal(pm2, 'Distribuidora QA').then(x => x.length === 0) && await semRastroLocal(pm2, 'Férias coletivas').then(x => x.length === 0), 'nada de cotação ou férias fica no navegador');
 
     console.log('Rodada 4: ficha, histórico, busca e mensagens');
     await pm2.evaluate(() => { document.getElementById('modal-editar-colaborador').classList.add('hidden'); });

@@ -29,7 +29,7 @@ async function banco() {
     CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$ SELECT nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;`);
   await db.exec(sql('supabase/producao/base/estrutura_anterior_as_migracoes.sql'));
   await db.exec(`INSERT INTO public.martins_empresas(id, razao_social) VALUES ('${E}', 'Construtora Martins - cadastro inicial');`);
-  for (const d of ['supabase/producao/migrations', 'supabase/v2/migrations', 'supabase/v3/migrations', 'supabase/v4/migrations', 'supabase/v5/migrations', 'supabase/v6/migrations', 'supabase/v7/migrations', 'supabase/v8/migrations', 'supabase/v9/migrations', 'supabase/v10/migrations', 'supabase/v11/migrations', 'supabase/v12/migrations', 'supabase/v13/migrations'])
+  for (const d of ['supabase/producao/migrations', 'supabase/v2/migrations', 'supabase/v3/migrations', 'supabase/v4/migrations', 'supabase/v5/migrations', 'supabase/v6/migrations', 'supabase/v7/migrations', 'supabase/v8/migrations', 'supabase/v9/migrations', 'supabase/v10/migrations', 'supabase/v11/migrations', 'supabase/v12/migrations', 'supabase/v13/migrations', 'supabase/v14/migrations'])
     for (const f of fs.readdirSync(path.join(raiz, d)).sort()) await db.exec(sql(d + '/' + f));
   const [M, L, MO] = Object.values(USUARIOS);
   await db.exec(`INSERT INTO auth.users VALUES ('${M}','master@teste.invalid'),('${L}','lancador@teste.invalid'),('${MO}','mestre@teste.invalid');
@@ -39,7 +39,7 @@ async function banco() {
   return db;
 }
 
-const TIPOS = { e: 'uuid', r: 'uuid', apos: 'uuid', op: 'uuid', v: 'bigint', limite: 'integer', d: 'jsonb', itens: 'jsonb', de: 'date', ate: 'date', m: 'text', estado: 'text', motivo: 'text', tipo: 'text', produto: 'uuid', origem: 'uuid', requisicao: 'uuid', recebimento: 'uuid', backup: 'jsonb', usuario: 'uuid', ativo: 'boolean', email: 'text', nome: 'text', conta: 'uuid', valor: 'bigint', data: 'date', conta_bancaria: 'uuid', obs: 'text', baixa: 'uuid', destino: 'uuid', qtd: 'bigint', ref: 'uuid', pedido: 'uuid', deposito: 'uuid', documento: 'jsonb', obra: 'uuid', rdo: 'uuid', consumo: 'uuid' };
+const TIPOS = { e: 'uuid', r: 'uuid', apos: 'uuid', op: 'uuid', v: 'bigint', limite: 'integer', d: 'jsonb', itens: 'jsonb', de: 'date', ate: 'date', m: 'text', estado: 'text', motivo: 'text', tipo: 'text', produto: 'uuid', origem: 'uuid', requisicao: 'uuid', recebimento: 'uuid', backup: 'jsonb', orcamento: 'uuid', aprovar_antes: 'boolean', usuario: 'uuid', ativo: 'boolean', email: 'text', nome: 'text', conta: 'uuid', valor: 'bigint', data: 'date', conta_bancaria: 'uuid', obs: 'text', baixa: 'uuid', destino: 'uuid', qtd: 'bigint', ref: 'uuid', pedido: 'uuid', deposito: 'uuid', documento: 'jsonb', obra: 'uuid', rdo: 'uuid', consumo: 'uuid' };
 async function supabase(db, route) {
   const req = route.request(), url = new URL(req.url());
   const json = (status, body) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
@@ -737,6 +737,60 @@ async function novo(page, campos) {
     check(pmo.erros.length === 0, 'nenhuma exceção JavaScript na sessão do mestre' + (pmo.erros.length ? ': ' + pmo.erros.join(' | ') : ''));
     const abasMo = await pmo.$$eval('#cs-painel .cs-aba', ns => ns.map(n => n.textContent));
     check(!abasMo.includes('Usuários e permissões') && !abasMo.includes('Backup e restauração') && !abasMo.includes('Gastos da obra') && !abasMo.includes('Despesas'), 'o mestre não vê as abas de Usuários, Backup, Gastos nem Despesas');
+
+    console.log('Orçamento (v14): listas do servidor, número, lista atualizada, conversão em um único pedido');
+    await db.query(`INSERT INTO martins_producao_v1.registros(empresa_id,modulo,id,revisao,dados,criado_por,atualizado_por) VALUES ($1,'vendedores','00000000-0000-4000-8000-0000000000f7',1,$2::jsonb,$3,$3)`, [E, JSON.stringify({ nome: 'Vendedor QA Orçamento', ativo: true }), M]);
+    pm2.on('dialog', d => d.accept());
+    await pm2.evaluate(() => window.MartinsOperacional.carregar());
+    await pm2.evaluate(() => window.abrirModalNovoOrcamentoVenda());
+    await pm2.waitForSelector('#orc-select-cliente-cadastrado');
+    const ops = id => pm2.$$eval('#' + id + ' option', os => os.map(o => o.textContent.trim()));
+    const cli = await ops('orc-select-cliente-cadastrado'), ven = await ops('orc-inp-vendedor-responsavel'), obd = await ops('orc-select-obra-destino');
+    check(cli.some(c => /Cliente Legado/.test(c)) && !cli.some(c => /Prefeitura Municipal de Passos|SAAE|UEMG/.test(c)), 'a lista de clientes do orçamento é a do servidor (sem Prefeitura de Passos, SAAE, UEMG…)');
+    check(ven.some(c => /Vendedor QA Orçamento/.test(c)) && !ven.some(c => /Josué|Taiane|Henrique Martins/.test(c)), 'a lista de vendedores é a do servidor (sem nomes de exemplo)');
+    check(obd.some(c => /QA Obra Engenharia/.test(c)) && !obd.some(c => /UEMG|Cemei|CRAS/.test(c)), 'as obras de destino são as do servidor (sem UEMG, Cemei, CRAS)');
+    check(await pm2.$eval('#orc-item-desc-0', n => n.value) === '' && await pm2.$eval('#orc-item-preco-0', n => n.value === '' || Number(n.value) === 0), 'o item inicial vem vazio (sem a telha de R$ 94 inventada)');
+    check(await pm2.$$eval('#form-novo-orcamento-venda select', ss => ss.every(s => !/Telha Sandu[ií]che Termoac[uú]stica EPS 30mm/.test([...s.options].map(o => o.textContent).join('|')) || s.hidden)), 'o seletor de produtos de exemplo do código antigo não aparece no orçamento');
+    await pm2.selectOption('#orc-select-cliente-cadastrado', { label: 'Cliente Legado' });
+    check(await pm2.$eval('#orc-inp-cliente', n => n.value) === 'Cliente Legado', 'escolher o cliente cadastrado preenche o nome do cliente');
+    await pm2.selectOption('#orc-inp-vendedor-responsavel', { label: 'Vendedor QA Orçamento' });
+    await pm2.fill('#orc-item-desc-0', 'Serviço QA de serralheria'); await pm2.fill('#orc-item-qtd-0', '2'); await pm2.fill('#orc-item-preco-0', '150');
+    await pm2.click('#form-novo-orcamento-venda button[type=submit]');
+    await pm2.waitForFunction(() => /confirmado|relido/i.test(document.getElementById('producao-status')?.textContent || ''), null, { timeout: 15000 });
+    const orcs = () => db.query(`SELECT id, revisao, dados FROM martins_producao_v1.registros WHERE modulo='orcamentos' AND dados->>'cliente'='Cliente Legado' AND dados->>'vendedorResponsavel'='Vendedor QA Orçamento'`).then(r => r.rows);
+    const o1 = (await orcs())[0];
+    check(o1 && Number.isInteger(o1.dados.numero) && o1.dados.status === 'Em elaboração' && o1.dados.total === 300 && o1.dados.cliente_id && o1.dados.vendedor_id, 'o orçamento é gravado no servidor com número, situação "Em elaboração", total 300, e ligado ao cliente e ao vendedor cadastrados');
+    const contador = () => pm2.evaluate(() => (document.getElementById('painel-central-orcamentos-otimizado-fase24')?.innerText.match(/\((\d+) localizado/) || [])[1]);
+    await pm2.waitForFunction(() => document.getElementById('painel-central-orcamentos-otimizado-fase24'));
+    check(Number(await contador()) >= 1 && await pm2.$eval('#painel-central-orcamentos-otimizado-fase24', n => n.innerText.includes('Cliente Legado')), 'o orçamento aparece em "Consulta e Acompanhamento" logo depois de salvar, sem F5');
+    const numTxt = 'ORC-' + String(o1.dados.numero).padStart(4, '0');
+    await pm2.evaluate(t => { window.pesquisarOrcamentosComerciaisAvancadoFase24({ termo: t }); window.renderizarModuloOrcamentosOtimizadoFase24(); }, numTxt);
+    check(Number(await contador()) === 1 && await pm2.$eval('#view-comercial', (n, t) => n.innerText.includes(t), numTxt), 'localizar pelo número (' + numTxt + ') encontra exatamente esse orçamento, e o número aparece na lista');
+    const josue = await pm2.evaluate(() => [...document.querySelectorAll('#view-comercial *')].filter(e => e.children.length === 0 && /Josu[ée] Paiva/.test(e.textContent) && e.offsetParent !== null).map(e => e.tagName + ':' + e.textContent.trim().slice(0, 50)));
+    check(josue.length === 0, 'a lista visível não inventa o vendedor "Josué Paiva"' + (josue.length ? ' — ' + josue.join(' | ') : ''));
+    await pm2.evaluate(() => window.pesquisarOrcamentosComerciaisAvancadoFase24({ termo: '' }));
+    await pm2.reload({ waitUntil: 'networkidle' }); await pm2.waitForTimeout(3500);
+    await pm2.evaluate(() => { try { window.MartinsCadastrosServidor.fechar(); } catch {} window.renderizarModuloOrcamentosOtimizadoFase24(); });
+    check(Number(await contador()) >= 1 && await pm2.$eval('#painel-central-orcamentos-otimizado-fase24', n => n.innerText.includes('Cliente Legado')), 'depois do F5 o orçamento continua na lista');
+    check(await pm2.evaluate(() => (window.orcamentosComerciaisDb || []).every(o => !/UEMG|SENAI|Condomínio/.test(o.cliente || ''))), 'a lista de orçamentos em memória não traz mais os exemplos fictícios (UEMG, SENAI, Condomínio)');
+    await pm2.evaluate(id => window.aprovarOrcamentoComercial(id), o1.id);
+    await pm2.waitForFunction(() => /Situação do orçamento: Aprovado/.test(document.getElementById('producao-status')?.textContent || ''));
+    check((await orcs())[0].dados.status === 'Aprovado', 'aprovar pela tela antiga grava a situação no servidor (antes só mudava uma cópia na memória)');
+    await pm2.evaluate(id => window.converterOrcamentoEmVenda(id), o1.id);
+    await pm2.waitForFunction(() => /Pedido de venda nº \d+ criado/.test(document.getElementById('producao-status')?.textContent || ''));
+    const pedidos = () => db.query(`SELECT dados FROM martins_producao_v1.registros WHERE modulo='pedidos_venda' AND dados->>'orcamento_id'=$1`, [o1.id]).then(r => r.rows);
+    check((await pedidos()).length === 1 && (await orcs())[0].dados.status === 'Convertido em venda' && (await pedidos())[0].dados.total === 300, 'a conversão gera UM pedido de venda (total 300) e o orçamento fica "Convertido em venda"');
+    await pm2.evaluate(id => window.converterOrcamentoEmVenda(id), o1.id);
+    await pm2.waitForFunction(() => /já foi convertido|não pode ser editado|Só se converte/.test(document.getElementById('producao-status')?.textContent || ''));
+    await pm2.evaluate(id => window.aprovarOuConverterOrcamentoComPagamentoFase24(id, {}), o1.id);
+    await pm2.waitForTimeout(1200);
+    check((await pedidos()).length === 1, 'converter de novo (pelos dois botões da lista) não cria outro pedido: continua 1');
+    await pm2.evaluate(() => window.MartinsCadastrosServidor.abrir('pedidos_venda'));
+    await pm2.waitForSelector('#cs-painel td:has-text("PV-0001")');
+    check(await pm2.$eval('#cs-painel tbody', n => /ORC-/.test(n.textContent) && /Cliente Legado/.test(n.textContent) && /300,00/.test(n.textContent)) && await pm2.$$('#cs-painel button:text-is("+ Novo")').then(x => x.length === 0), 'Pedidos de venda lista o pedido (PV, orçamento, cliente e total) e não oferece "+ Novo" (nascem só da conversão)');
+    await pm2.evaluate(() => window.MartinsCadastrosServidor.fechar());
+    const rastroOrc = await semRastroLocal(pm2, 'Serviço QA de serralheria');
+    check(rastroOrc.length === 0, 'nada do orçamento fica gravado no navegador (localStorage)' + (rastroOrc.length ? ' — chaves: ' + rastroOrc.join(', ') : ''));
 
     console.log('Rodada 4: ficha, histórico, busca e mensagens');
     await pm2.evaluate(() => { document.getElementById('modal-editar-colaborador').classList.add('hidden'); });

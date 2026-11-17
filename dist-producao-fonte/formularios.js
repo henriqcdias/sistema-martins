@@ -36,8 +36,14 @@
  // As cópias para os renderizadores legados não são a fonte dos dados editáveis.
  const seguro=x=>typeof x==='string'?x.replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'’').replaceAll('\\','＼'):Array.isArray(x)?x.map(seguro):x&&typeof x==='object'?Object.fromEntries(Object.entries(x).map(([k,v])=>[k,seguro(v)])):x;
  function listar(m){return [...dados[m].values()].map(r=>({...clone(r.dados),id:r.id,empresaId:r.empresa_id,empresa_id:r.empresa_id,remote_id:r.id,rowVersion:r.revisao,revisao:r.revisao}));}
- function visao(m){return seguro(listar(m).map(r=>({...r,empresa:contexto()?.vinculos.find(v=>v.empresa_id===r.empresa_id)?.nomeEmpresa||'',...(m==='funcionarios'?{obraId:r.obra_id||null,obra:catalogos.obras.find(o=>o.id===r.obra_id)?.nome||''}:{})})));}
+ function visao(m){return seguro(listar(m).map(r=>({...r,empresa:contexto()?.vinculos.find(v=>v.empresa_id===r.empresa_id)?.nomeEmpresa||'',...(m==='funcionarios'?{obraId:r.obra_id||null,obra:catalogos.obras.find(o=>o.id===r.obra_id)?.nome||''}:{}),...(m==='orcamentos'?{num:r.numero?'ORC-'+String(r.numero).padStart(4,'0'):'',valorTotal:r.total,status:(!r.status||r.status==='Em Orçamento')?'Em elaboração':r.status,obra:catalogos.obras.find(o=>o.id===r.obra_id)?.nome||'',vendedor:r.vendedorResponsavel||''}:{})})));}
  function tabelaFrequencia(){const out={};for(const r of listar('frequencia')){out[r.data]??={};const p=out[r.data][r.funcionario_id]??={colabId:r.funcionario_id,nome:catalogos.funcionarios.find(x=>x.id===r.funcionario_id)?.nome||'',status:r.situacao,horas:0,he50:0,he100:0,alocacoes:[]};p.horas+=Number(r.horas_normais);p.he50+=Number(r.horas_extras||0);p.obra=r.obra_id||'';p.obraId=r.obra_id||'';p.rowVersion=r.revisao;p.alocacoes.push(r);}return seguro(out);}
+ // O código antigo copiava a lista de orçamentos/pedidos (agora vinda do servidor) para o navegador. Essas cópias locais
+ // não são mais gravadas: a única fonte é o servidor.
+ try{const original=Storage.prototype.setItem;Storage.prototype.setItem=function(chave,valor){if(this===W.localStorage&&/^cm_(orcamentos_|pedidos_venda_db|previsao_recebimentos_vendas_db|supabase_cloud_tables_v16)/.test(String(chave)))return;return original.call(this,chave,valor);};}catch{}
+ // Orçamentos: a lista em memória do código antigo é sempre a do servidor. Sementes de demonstração (UEMG, SENAI…)
+ // e cópias locais não conseguem mais se misturar a ela.
+ try{Object.defineProperty(W,'orcamentosComerciaisDb',{configurable:true,enumerable:true,get:()=>visao('orcamentos'),set:()=>{}});}catch{}
  function instalarLeituras(){
   W.getColaboradoresDb=()=>visao('funcionarios');W.getDb=()=>visao('rdos').map(r=>({...r,num:r.numero,obra:seguro(catalogos.obras.find(o=>o.id===r.obra_id)?.nome||''),obraId:r.obra_id,cliente:seguro(registro('obras',r.obra_id)?.dados.clienteResponsavel||''),resp:r.responsavel||'',status:'Rascunho'}));
   W.getFrequenciaDiariaDb=tabelaFrequencia;
@@ -59,6 +65,11 @@
   for(const f of D.querySelectorAll('#form-novo-orcamento-venda'))if(!el('orc-inp-obra')){const label=D.createElement('label');label.textContent='Obra vinculada (opcional)';const select=D.createElement('select');select.id='orc-inp-obra';select.className='w-full border rounded p-2';label.append(select);f.prepend(label);}
   for(const s of D.querySelectorAll('.sel-trab-cadastrado')){const item=typeof currentTrabalhadores!=='undefined'?currentTrabalhadores[Number(s.dataset.index)]:null;preencherSelect(s,catalogos.funcionarios,'Selecione o funcionário');if(item?.funcionario_id&&catalogos.funcionarios.some(x=>x.id===item.funcionario_id))s.value=item.funcionario_id;}
 
+  // Orçamento: cliente, vendedor, obra e produto vêm do cadastro compartilhado, não de listas fixas do código antigo.
+  if(el('orc-select-cliente-cadastrado')?.tagName==='SELECT')preencherSelect(el('orc-select-cliente-cadastrado'),Array.isArray(catalogos.clientes)?catalogos.clientes:[],'-- Selecionar cliente cadastrado --');
+  if(el('orc-inp-vendedor-responsavel')?.tagName==='SELECT')preencherSelect(el('orc-inp-vendedor-responsavel'),Array.isArray(catalogos.vendedores)?catalogos.vendedores:[],'Selecione o vendedor (opcional)');
+  if(el('orc-select-obra-destino')?.tagName==='SELECT')preencherSelect(el('orc-select-obra-destino'),catalogos.obras,catalogos.obras.length?'Selecione a obra':'Nenhuma obra cadastrada nesta empresa');
+  for(const s of D.querySelectorAll('#form-novo-orcamento-venda select'))if(!s.id&&/Escolher Produto do Cat[aá]logo/.test(s.options[0]?.textContent||'')){s.hidden=true;s.closest('div')&&(s.closest('div').title='O catálogo de produtos do orçamento ainda não está no servidor: descreva o item manualmente.');}
   const semObras='Nenhuma obra cadastrada nesta empresa — cadastre em Gestão de Obras';
   for(const id of ['obra-select','gestao-obra-select','nc-obra','edit-colab-obra','filtro-obra-hist','orc-inp-obra','atividade-obra-select','ficha-inp-obra']){const s=el(id);if(s?.tagName==='SELECT'){preencherSelect(s,catalogos.obras,id==='filtro-obra-hist'?'Todas as obras':(catalogos.obras.length?'Selecione a obra':semObras));if(id==='filtro-obra-hist'&&s.options[0])s.options[0].value='todas';}}
   if(el('obra-inp-cliente-select')?.tagName==='SELECT'&&Array.isArray(catalogos.clientes))preencherSelect(el('obra-inp-cliente-select'),catalogos.clientes,'Selecione o cliente (cadastro compartilhado)');
@@ -73,15 +84,15 @@
    const row=s.closest('tr');if(row&&!row.querySelector('.freq-inp-horas')){const input=D.createElement('input');input.type='number';input.min='0';input.max='8';input.step='0.25';input.className='freq-inp-horas w-20 border rounded p-1';input.setAttribute('aria-label','Horas normais de '+(row.dataset.colabNome||'funcionário'));const obra=s.value.startsWith('OBRA:')?s.value.slice(5):null;const atual=listar('frequencia').find(x=>x.funcionario_id===row.dataset.colabId&&x.obra_id===obra&&x.data===(val('ponto-data-filtro')||val('freq-input-data')));input.value=atual?.horas_normais??8;s.after(input);}
 
   }
-  for(const s of D.querySelectorAll('#orc-inp-empresa,#ficha-inp-empresa')){const c=contexto();preencherSelect(s,(c?.vinculos||[]).map(v=>({id:v.empresa_id,nome:v.nomeEmpresa})));s.value=empresa||'';s.disabled=true;}
+  for(const s of D.querySelectorAll('#orc-inp-empresa,#orc-empresa-emitente,#ficha-inp-empresa')){const c=contexto();preencherSelect(s,(c?.vinculos||[]).map(v=>({id:v.empresa_id,nome:v.nomeEmpresa})));s.value=empresa||'';s.disabled=true;}
  }
  function atualizarVisoes(){
   instalarLeituras();W.colaboradoresDb=visao('funcionarios');W.funcionariosDb=W.colaboradoresDb;W.colaboradoresOficialDb=W.colaboradoresDb;
-  W.empreendimentosObrasDb=visao('obras');W.orcamentosComerciaisDb=visao('orcamentos');
+  W.empreendimentosObrasDb=visao('obras');
   W.etapasPlanejamentoObraDb=visao('planejamento');
   // A fonte lexical original é mantida; apenas sua projeção de tela é atualizada.
   if(typeof dadosObras==='object'&&dadosObras){for(const k of Object.keys(dadosObras))delete dadosObras[k];for(const r of visao('obras'))dadosObras[r.id]={...r,cliente:r.clienteResponsavel||'',resp:r.responsavelTecnico||'',contrato:r.valorContratado||0,medido:0,itensMedicao:r.itensMedicao||[],planilhaRef:r.planilhaRef||[],obs:r.obs||[]};}
-  for(const name of ['renderColaboradoresTable','filtrarERenderizarQuadroColaboradoresV169','renderListaOrcamentosVendas','renderHistorico','renderAuditoriaPonto'])try{W[name]?.();}catch(error){console.warn('Projeção de tela',name,error.message);}
+  for(const name of ['renderColaboradoresTable','filtrarERenderizarQuadroColaboradoresV169','renderListaOrcamentosVendas','renderizarModuloOrcamentosOtimizadoFase24','renderizarPainelPedidosConvertidosUi','renderHistorico','renderAuditoriaPonto'])try{W[name]?.();}catch(error){console.warn('Projeção de tela',name,error.message);}
   seletores();
  }
  const ROTULOS={conexao:'falha de conexão com o Supabase',permissao:'acesso negado pelo servidor (permissão ou sessão)',contrato:'função ou schema indisponível na API do Supabase',limite:'limite de requisições do Supabase',resposta:'resposta fora do contrato esperado'};
@@ -235,8 +246,52 @@
  }
  async function formularioOrcamento(form){
   const id=W.currentEditingOrcamentoId||form.dataset.registroProducao||null,cliente=val('orc-inp-cliente');if(!cliente)throw Error('Informe o cliente.');
-  await enviar('orcamentos',{nome:'Orçamento · '+cliente,cliente,itens:itensOrcamento(),condicoes:val('orc-inp-condicoes'),prazo:val('orc-inp-prazo'),obra_id:referencia('obras',val('orc-inp-obra'),true),status:registro('orcamentos',id)?.dados.status||'Em Orçamento',data:registro('orcamentos',id)?.dados.data||hoje()},id,id?snapshot(form,id,'orcamentos'):0);W.currentEditingOrcamentoId=null;
+  const cadastrado=(catalogos.clientes||[]).find(x=>x.id===val('orc-select-cliente-cadastrado')&&x.nome===cliente);
+  const vend=(catalogos.vendedores||[]).find(x=>x.id===val('orc-inp-vendedor-responsavel'));
+  const destino=form.querySelector('input[type=radio][id*="tipo-destino"]:checked')?.value==='OBRA'?val('orc-select-obra-destino'):'';
+  const conteudo={nome:'Orçamento · '+cliente,cliente,cliente_id:cadastrado?.id,vendedor_id:vend?.id,vendedorResponsavel:vend?.nome,itens:itensOrcamento(),condicoes:val('orc-inp-condicoes'),prazo:val('orc-inp-prazo'),validade:val('orc-inp-validade'),obra_id:referencia('obras',val('orc-inp-obra')||destino,true),data:registro('orcamentos',id)?.dados.data||hoje()};
+  for(const k of Object.keys(conteudo))if(conteudo[k]===undefined||conteudo[k]===null||conteudo[k]==='')delete conteudo[k];
+  // Número e situação são do servidor: o navegador não os envia.
+  await enviar('orcamentos',conteudo,id,id?snapshot(form,id,'orcamentos'):0);W.currentEditingOrcamentoId=null;
  }
+ // ---- Fluxo do orçamento no servidor (v14): situação com histórico, conversão em pedido (um só) e duplicação ----
+ function aviso(texto,erro=false){mensagem(texto,erro);if(W.showToast)W.showToast(texto,erro?'error':'success');}
+ async function orcamentoAcao(id,rotulo,chamar){
+  try{
+   const r=registro('orcamentos',id);if(!r)throw Error('Orçamento não encontrado na empresa ativa. Use Atualizar dados.');
+   const res=await chamar(r);await carregar();if(res?.aviso)aviso(res.aviso);return {sucesso:true,...res};
+  }catch(error){aviso((error.code==='40001'?'Outra sessão alterou este orçamento. Recarregue. ':'')+(error.message||('Não foi possível '+rotulo+'.')),true);return {sucesso:false,erro:error.message};}
+ }
+ const orcamentoEstado=(id,estado,motivo=null)=>orcamentoAcao(id,'mudar a situação',async r=>{
+  await W.MartinsProducaoRpc.orcamentoEstado({e:requireEmpresa(),op:crypto.randomUUID(),orcamento:id,v:Number(r.revisao),estado,motivo});return {aviso:'Situação do orçamento: '+estado+'.'};
+ });
+ const orcamentoConverter=(id,aprovarAntes=false)=>{
+  if(!confirm('Converter este orçamento em pedido de venda? Cada orçamento gera um único pedido e isso não pode ser desfeito.'))return Promise.resolve({sucesso:false,erro:'Conversão cancelada.'});
+  return orcamentoAcao(id,'converter em venda',async r=>{
+   const res=await W.MartinsProducaoRpc.orcamentoConverter({e:requireEmpresa(),op:crypto.randomUUID(),orcamento:id,v:Number(r.revisao),aprovar_antes:!!aprovarAntes});
+   return {pedidoNumero:res.pedido_numero,aviso:'Pedido de venda nº '+res.pedido_numero+' criado. Os recebimentos são lançados em Cadastros e Despesas → Contas a receber.'};
+  });
+ };
+ const orcamentoDuplicar=id=>orcamentoAcao(id,'duplicar',async r=>{
+  const d=clone(r.dados);for(const k of ['numero','status','historicoStatus','pedido_id','pedido_numero','id','empresa_id','empresaId','revisao','rowVersion'])delete d[k];
+  d.nome=(d.nome||'Orçamento')+' (cópia)';d.data=hoje();await enviar('orcamentos',d,null,0);return {aviso:'Cópia criada como novo orçamento em elaboração.'};
+ });
+ for(const [nome,fn] of Object.entries({
+  alterarStatusOrcamentoVenda:(id,novo)=>/Vendido|Convertido/i.test(novo||'')?orcamentoConverter(id,true):orcamentoEstado(id,({'Em Orçamento':'Em elaboração','Orçamento Aberto':'Em elaboração','Venda Aprovada':'Aprovado'})[novo]||novo),
+  aprovarOrcamentoComercial:id=>orcamentoEstado(id,'Aprovado'),marcarOrcamentoComoVendido:id=>orcamentoConverter(id,true),marcarOrcamentoComoEntregue:id=>orcamentoEstado(id,'Entregue'),
+  converterOrcamentoEmVenda:id=>orcamentoConverter(id,true),converterOrcamentoEmVendaUnificado:id=>orcamentoConverter(id,true),converterOrcamentoEmPedidoFechadoCompleto:id=>orcamentoConverter(id,true),
+  converterOrcamentoEmVendaEstoqueLegado:id=>orcamentoEstado(id,'Entregue'),converterOrcamentoEmVendaIntegrada:id=>orcamentoConverter(id,true),converterOrcamentoMultiplasTelhasEmVendaEProducao:id=>orcamentoConverter(id,true),converterOrcamentoEsquadriasEmPedidoVenda:id=>orcamentoConverter(id,true),
+  aprovarOuConverterOrcamentoComPagamentoFase24:(id,op)=>op?.apenasAprovar?orcamentoEstado(id,'Aprovado'):orcamentoConverter(id,true),duplicarOrcamentoComercialFase24:id=>orcamentoDuplicar(id)
+ })){try{Object.defineProperty(W,nome,{configurable:false,enumerable:true,get:()=>fn,set:()=>{}});}catch{}}
+ // O select de cliente cadastrado entrega o id; o campo do orçamento recebe o NOME do cliente.
+ try{Object.defineProperty(W,'selecionarClienteNoOrcamento',{configurable:false,enumerable:true,get:()=>idOuNome=>{const c=(catalogos.clientes||[]).find(x=>x.id===idOuNome),i=el('orc-inp-cliente');if(i&&idOuNome)i.value=c?c.nome:'';},set:()=>{}});}catch{}
+ // "Pedidos Convertidos": a lista é a do servidor (Cadastros e Despesas → Pedidos de venda).
+ try{Object.defineProperty(W,'renderizarPainelPedidosConvertidosUi',{configurable:false,enumerable:true,get:()=>()=>{
+  const p=el('painel-com-pedidos-convertidos');if(!p)return;const h=D.createElement('h3');h.className='font-black text-slate-900';h.textContent='Pedidos de venda (do servidor)';
+  const t=D.createElement('p');t.className='text-xs text-slate-600';t.textContent='Os pedidos nascem da conversão de um orçamento aprovado (um pedido por orçamento) e ficam em Cadastros e Despesas → Pedidos de venda.';
+  const b=D.createElement('button');b.type='button';b.className='bg-slate-900 text-amber-400 font-black text-xs px-3 py-2 rounded-xl';b.textContent='Abrir pedidos de venda';b.onclick=()=>W.MartinsCadastrosServidor?.abrir('pedidos_venda');
+  p.replaceChildren(h,t,b);
+ },set:()=>{}});}catch{}
  function resumo(){
   // O painel inicial vem do servidor (painel-servidor.js); o resumo antigo fica só como reserva.
   if(W.MartinsPainelServidor){W.MartinsPainelServidor.renderizarPainel();return;}

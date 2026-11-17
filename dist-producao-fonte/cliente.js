@@ -3,7 +3,7 @@
 })(typeof window==='object'?window:globalThis,function(){
  'use strict';
  const UUID=/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i;
- const modules=['funcionarios','obras','planejamento','rdos','frequencia','orcamentos','clientes','fornecedores','vendedores','motoristas','veiculos','produtos','depositos','centros_custo','contas_bancarias','despesas','feriados','precos_insumo','epis','estoque_movimentos','pedidos_compra','recebimentos_compra','frota_eventos','ausencias','cotacoes','requisicoes_material','contas_receber'];
+ const modules=['funcionarios','obras','planejamento','rdos','frequencia','orcamentos','clientes','fornecedores','vendedores','motoristas','veiculos','produtos','depositos','centros_custo','contas_bancarias','despesas','feriados','precos_insumo','epis','estoque_movimentos','pedidos_compra','recebimentos_compra','frota_eventos','ausencias','cotacoes','requisicoes_material','contas_receber','pedidos_venda'];
  const validId=x=>typeof x==='string'&&UUID.test(x);
  function create({rpc,context,randomUUID=()=>crypto.randomUUID()}={}){
   if(!rpc?.consultar||!rpc?.salvar||typeof context!=='function')throw Error('Transporte da v5 obrigatório');

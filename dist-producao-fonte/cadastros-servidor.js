@@ -57,6 +57,8 @@
       ['descricao', 'Descrição (ex.: Medição 1 - Obra X)', 'texto', { obrigatorio: true }], ['valor_centavos', 'Valor a receber (R$)', 'dinheiro', { obrigatorio: true }],
       ['vencimento', 'Vencimento', 'data', { obrigatorio: true }], ['competencia', 'Competência', 'data'],
       ['obra_id', 'Obra', 'ref', { catalogo: 'obras', vazio: 'Nenhuma' }], ['numero_documento', 'Nº do documento / nota', 'texto'], ['observacao', 'Observação', 'area']] },
+    pedidos_venda: { titulo: 'Pedidos de venda', colunas: ['numero', 'orcamento_numero', 'data', 'cliente', 'total', 'estado'], semAtivo: true, somenteLeitura: true, campos: [
+      ['numero', 'Pedido', 'texto'], ['orcamento_numero', 'Orçamento', 'texto'], ['data', 'Data', 'data'], ['cliente', 'Cliente', 'texto'], ['total', 'Total', 'texto'], ['estado', 'Situação', 'texto']] },
     feriados: { titulo: 'Feriados', colunas: ['data', 'nome', 'abrangencia'], campos: [
       ['data', 'Data', 'data', { obrigatorio: true }], ['nome', 'Descrição', 'texto', { obrigatorio: true }],
       ['abrangencia', 'Abrangência', 'opcoes', { opcoes: [['municipal', 'Municipal'], ['estadual', 'Estadual'], ['nacional', 'Nacional'], ['empresa', 'Recesso da empresa']] }]] },
@@ -292,6 +294,12 @@
     if (coluna === 'cnh_validade' || coluna === 'competencia' || coluna === 'vencimento' || coluna === 'data') return v ? String(v).split('-').reverse().join('/') : '';
     if (coluna === 'preco_centavos') return v === undefined || v === null ? '' : reais(v);
     if (coluna === 'total_centavos' || coluna === 'recebido_centavos') return reais(v || 0);
+    if (m === 'pedidos_venda') {
+      if (coluna === 'numero') return v ? 'PV-' + String(v).padStart(4, '0') : '';
+      if (coluna === 'orcamento_numero') return v ? 'ORC-' + String(v).padStart(4, '0') : '';
+      if (coluna === 'total') return Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+      if (coluna === 'estado') return { aberto: 'Aberto', entregue: 'Entregue', cancelado: 'Cancelado' }[v] || v || '';
+    }
     if (coluna === 'cliente_id') return rotuloRef('clientes', v) || d.cliente_nome || '';
     if (coluna === 'veiculo_id') return rotuloRef('veiculos', v) || (v ? 'Inativo' : '');
     if (coluna === 'litros_milli') return v ? (Number(v) / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 3 }) + ' L' : '';
@@ -625,14 +633,14 @@
     clientes: 'Clientes', fornecedores: 'Fornecedores', vendedores: 'Vendedores', motoristas: 'Motoristas', veiculos: 'Veículos', produtos: 'Produtos e materiais', depositos: 'Depósitos',
     centros_custo: 'Centros de custo', contas_bancarias: 'Contas bancárias', despesas: 'Despesas (financeiro)', feriados: 'Feriados', precos_insumo: 'Preços de insumos', epis: 'EPIs e uniformes',
     estoque_movimentos: 'Estoque (movimentações)', pedidos_compra: 'Pedidos de compra', recebimentos_compra: 'Recebimentos de compra', frota_eventos: 'Frota (abastecimento e manutenção)',
-    ausencias: 'Ausências e férias', cotacoes: 'Propostas de cotação', requisicoes_material: 'Requisições de material', contas_receber: 'Contas a receber (vendas)' };
+    ausencias: 'Ausências e férias', cotacoes: 'Propostas de cotação', requisicoes_material: 'Requisições de material', contas_receber: 'Contas a receber (vendas)', pedidos_venda: 'Pedidos de venda' };
   // Modelos são só um atalho: preenchem a tela, o Master confere e salva. l = ver, c = criar, e = editar.
   const MODELOS = {
     'Almoxarife': { estoque_movimentos: 'lce', epis: 'lce', produtos: 'l', depositos: 'l', pedidos_compra: 'l', recebimentos_compra: 'l', requisicoes_material: 'l', obras: 'l', rdos: 'l' },
     'Mestre de obras (solicita material pelo celular)': { requisicoes_material: 'lc', obras: 'l', produtos: 'l', depositos: 'l', rdos: 'l' },
     'Engenharia': { obras: 'lce', planejamento: 'lce', rdos: 'lce', requisicoes_material: 'lce', frequencia: 'l', funcionarios: 'l', produtos: 'l', depositos: 'l', estoque_movimentos: 'l', orcamentos: 'l' },
     'RH / Departamento pessoal': { funcionarios: 'lce', frequencia: 'lce', ausencias: 'lce', epis: 'lce', feriados: 'lce', obras: 'l', rdos: 'l' },
-    'Comercial / Vendedor': { clientes: 'lce', vendedores: 'l', orcamentos: 'lce', obras: 'l', contas_receber: 'l' },
+    'Comercial / Vendedor': { clientes: 'lce', vendedores: 'l', orcamentos: 'lce', obras: 'l', contas_receber: 'l', pedidos_venda: 'l' },
     'Financeiro (contas a receber)': { contas_receber: 'lce', clientes: 'l', contas_bancarias: 'l', obras: 'l', orcamentos: 'l' },
     'Lançador financeiro': { despesas: 'lc', fornecedores: 'l', centros_custo: 'l', contas_bancarias: 'l', obras: 'l' },
     'Compras': { pedidos_compra: 'lce', fornecedores: 'lce', cotacoes: 'lce', produtos: 'l', precos_insumo: 'lce', centros_custo: 'l', obras: 'l' },
@@ -876,7 +884,7 @@
     const busca = el('input', { type: 'search', placeholder: 'Pesquisar…', 'aria-label': 'Pesquisar ' + def.titulo });
     const contagem = el('span', { 'aria-live': 'polite', style: 'color:#64748b;font-size:13px' });
     const topo = el('div', { classe: 'cs-acoes' }, busca, contagem,
-      pode(aba, 'criar') ? el('button', { type: 'button', classe: 'cs-primario', texto: '+ Novo', onclick: () => abrirFormulario(null) }) : null,
+      pode(aba, 'criar') && !def.somenteLeitura ? el('button', { type: 'button', classe: 'cs-primario', texto: '+ Novo', onclick: () => abrirFormulario(null) }) : null,
       aba === 'despesas' && W.MartinsPainelServidor ? el('button', { type: 'button', classe: 'cs-secundario', texto: 'Exportar CSV', onclick: () => W.MartinsPainelServidor.exportarDespesasCsv().catch(e => mensagem(traduzir(e), true)) }) : null);
     const tabela = el('table', { classe: 'cs-tabela' });
     tabela.append(el('thead', {}, el('tr', {}, def.colunas.map(c => el('th', { texto: (def.campos.find(x => x[0] === c)?.[1] || c).replace(/ \(.+\)$/, '') })), def.semAtivo ? null : el('th', { texto: 'Situação' }), el('th', { texto: 'Histórico' }))));
@@ -889,7 +897,7 @@
       const achados = linhas.filter(r => !q || palheiro(r).includes(q));
       contagem.textContent = q ? achados.length + ' de ' + linhas.length + ' registro(s)' : linhas.length + ' registro(s)';
       tbody.replaceChildren(...achados.map(r => {
-        const tr = el('tr', { tabindex: 0, onclick: () => pode(aba, 'editar') && abrirFormulario(r), onkeydown: ev => ev.key === 'Enter' && pode(aba, 'editar') && abrirFormulario(r) },
+        const tr = el('tr', { tabindex: 0, onclick: () => pode(aba, 'editar') && !def.somenteLeitura && abrirFormulario(r), onkeydown: ev => ev.key === 'Enter' && pode(aba, 'editar') && !def.somenteLeitura && abrirFormulario(r) },
           def.colunas.map(c => el('td', { 'data-rotulo': (def.campos.find(x => x[0] === c)?.[1] || c), texto: c === 'estado' ? null : String(formatar(aba, c, r.dados)) }, c === 'estado' ? (aba === 'contas_receber' ? acoesReceber(r) : acoesDespesa(r)) : null)),
           def.semAtivo ? null : el('td', { 'data-rotulo': 'Situação', texto: r.dados.ativo === false ? 'Inativo' : 'Ativo' }),
           el('td', { 'data-rotulo': 'Histórico', onclick: ev => ev.stopPropagation() }, el('button', { type: 'button', classe: 'cs-secundario', texto: 'Histórico', 'aria-label': 'Ver histórico de alterações', onclick: ev => { ev.stopPropagation(); mostrarHistorico(r); } })));

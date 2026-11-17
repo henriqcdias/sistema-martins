@@ -321,9 +321,9 @@
               <div>
                 <label for="resp-select" class="block text-xs font-bold text-slate-700 mb-1">Responsável Técnico da Obra (CREA Ativo Fixo) *</label>
                 <div class="relative">
-                  <input type="text" id="resp-fixo-display" readonly value="Engª Taiane Furlan Palmiro (CREA-MG 218.450/D)" class="w-full bg-slate-100 border border-slate-300 rounded-lg px-3 py-2 text-xs font-extrabold text-slate-900 cursor-not-allowed select-none" title="Definido no cadastro geral da Obra para segurança junto à fiscalização">
-                  <select id="resp-select" class="hidden" required>
-                    <option value="Taiane Furlan Palmiro" selected>Taiane Furlan Palmiro (Engª Civil · CREA-MG 218.450/D)</option>
+                  <input type="text" id="resp-fixo-display" readonly value="" placeholder="Selecione a obra para ver o responsável técnico" class="w-full bg-slate-100 border border-slate-300 rounded-lg px-3 py-2 text-xs font-extrabold text-slate-900 cursor-not-allowed select-none" title="Definido no cadastro geral da Obra para segurança junto à fiscalização">
+                  <select id="resp-select" class="hidden">
+                    <option value="" selected>Responsável técnico não informado</option>
                   </select>
                 </div>
                 <span class="text-[10px] text-emerald-700 font-bold block mt-0.5">🔒 Vinculado à Obra (Alterável apenas na Gestão da Obra)</span>
@@ -336,8 +336,8 @@
               <div class="flex items-center space-x-2.5">
                 <div class="p-1.5 bg-amber-500 text-slate-950 rounded-lg font-black text-xs shadow-2xs">⏱️ CRONOGRAMA</div>
                 <div>
-                  <span class="font-extrabold text-slate-900 block" id="rdo-prazo-datas">Ordem de Serviço: 20/02/2026 · Término Previsto: 30/11/2026</span>
-                  <span class="text-[10px] text-slate-500 font-medium" id="rdo-prazo-contratante">Prefeitura Municipal de Passos</span>
+                  <span class="font-extrabold text-slate-900 block" id="rdo-prazo-datas">Selecione a obra para ver o cronograma</span>
+                  <span class="text-[10px] text-slate-500 font-medium" id="rdo-prazo-contratante"></span>
                 </div>
               </div>
               <div class="flex items-center space-x-2">
@@ -1389,10 +1389,10 @@
             <span class="text-[11px] text-slate-600 font-extrabold uppercase block">Responsável Técnico da Obra</span>
             <span id="g-card-dias-restantes" class="text-[10px] bg-amber-100 text-amber-900 border border-amber-300 font-black px-2 py-0.5 rounded-full">Prazo Ativo</span>
           </div>
-          <p id="g-card-resp" class="text-xs font-black text-slate-900">Engª Taiane Furlan Palmiro</p>
+          <p id="g-card-resp" class="text-xs font-black text-slate-900">Não informado</p>
           <div class="pt-1 border-t border-slate-100 flex flex-col gap-1">
             <select id="gestao-select-rt-obra" onchange="alterarResponsavelGeralObra(this.value)" class="w-full bg-slate-50 border border-slate-300 rounded-lg px-2 py-1 text-[11px] font-bold text-slate-800" title="Definir o Responsável Técnico titular desta obra (apenas profissionais com CREA ativo)">
-              <option value="Taiane Furlan Palmiro">👷‍♀️ Engª Taiane Furlan Palmiro (CREA-MG 218.450/D)</option>
+              <option value="">Responsável técnico não informado</option>
             </select>
             <div class="flex items-center justify-between text-[10px] text-slate-600">
               <span>Término da Obra:</span>
@@ -1970,10 +1970,10 @@
             <div>
               <div class="flex items-center space-x-2">
                 <h4 class="font-black text-slate-900 text-sm">Lembrete de Aniversários da Equipe</h4>
-                <span id="badge-aniver-hoje" class="bg-red-500 text-white font-black text-[10px] px-2 py-0.5 rounded-full animate-bounce">1 Aniversário Hoje!</span>
+                <span id="badge-aniver-hoje" class="hidden bg-red-500 text-white font-black text-[10px] px-2 py-0.5 rounded-full animate-bounce"></span>
               </div>
               <p id="texto-aniversariantes-mes" class="text-xs text-slate-700 mt-0.5 font-medium leading-tight">
-                🎉 Hoje é aniversário de <strong>Walisson Antonio de Souza</strong> (02/11)! Próximos: Milton Antônio Alves (05/11), Leonardo Garcia (12/11).
+                Nenhum aniversário a destacar: a data de nascimento ainda não é gravada no servidor.
               </p>
             </div>
           </div>
@@ -5392,13 +5392,7 @@
         // BANCO OFICIAL DE DIÁRIOS DE OBRAS DA CONSTRUTORA MARTINS (20 REGISTROS - 7 OBRAS)
     const initialRdos = window.initialRdos || [];
 
-    let currentTrabalhadores = [
-      { nome: "Leonardo Garcia dos Reis", funcao: "Encarregado de Obra", vinculo: "Próprio (CLT)", horas: 8 },
-      { nome: "Maurício Francisco de Oliveira", funcao: "Pedreiro", vinculo: "Próprio (CLT)", horas: 8 },
-      { nome: "Andlei Cezar da Silva", funcao: "Pedreiro", vinculo: "Próprio (CLT)", horas: 8 },
-      { nome: "Vinícius Bento de Souza", funcao: "Pintor Profissional", vinculo: "Próprio (CLT)", horas: 8 },
-      { nome: "Flávio Silva Oliveira", funcao: "Servente de Pedreiro", vinculo: "Próprio (CLT)", horas: 8 }
-    ];
+    let currentTrabalhadores = [];
 
     function getDb({ somenteLeitura = false } = {}) {
       try {
@@ -5938,7 +5932,7 @@
       let terc = 0;
       let epi = 0;
       colabs.forEach(c => {
-        if (c.vinculo.includes("CLT") || c.vinculo.includes("Próprio")) clt++;
+        if ((c.vinculo||'').includes("CLT") || (c.vinculo||'').includes("Próprio")) clt++;
         else terc++;
         if (c.epis && c.epis.length > 5) epi++;
       });
@@ -5951,7 +5945,7 @@
       if (document.getElementById("badge-total-colaboradores")) document.getElementById("badge-total-colaboradores").textContent = colabs.length;
 
       const filtered = colabs.filter(c => {
-        if (filtroVinc !== "todos" && !c.vinculo.includes(filtroVinc)) return false;
+        if (filtroVinc !== "todos" && !(c.vinculo||'').includes(filtroVinc)) return false;
         if (filtroObra !== "todas" && c.obra !== filtroObra && c.obra !== "Todas as Obras") return false;
         if (filtroBusca) {
           const matchNome = c.nome.toLowerCase().includes(filtroBusca);
@@ -5971,7 +5965,7 @@
       filtered.forEach((c, idx) => {
         const tr = document.createElement("tr");
         tr.className = "hover:bg-slate-50 transition";
-        const isClt = c.vinculo.includes("CLT") || c.vinculo.includes("Próprio");
+        const isClt = (c.vinculo||'').includes("CLT") || (c.vinculo||'').includes("Próprio");
         const badgeVinc = isClt
           ? `<span class="bg-blue-100 text-blue-900 border border-blue-200 text-[10px] font-bold px-2 py-0.5 rounded-full">CLT</span>`
           : `<span class="bg-orange-100 text-orange-900 border border-orange-200 text-[10px] font-bold px-2 py-0.5 rounded-full">Terceirizado</span>`;
@@ -6241,7 +6235,7 @@
               </div>
               <div class="truncate max-w-[200px]">
                 <span class="font-bold text-slate-900 block leading-tight truncate" title="${c.nome}">${c.nome}</span>
-                <span class="text-[10px] text-slate-500">${c.funcao} · <strong class="text-slate-700">${c.vinculo.includes("CLT") ? 'CLT' : 'Terc.'}</strong></span>
+                <span class="text-[10px] text-slate-500">${c.funcao} · <strong class="text-slate-700">${(c.vinculo||'').includes("CLT") ? 'CLT' : ((c.vinculo||'') ? 'Terc.' : '—')}</strong></span>
               </div>
             </div>
           </td>
@@ -6596,8 +6590,8 @@
           </td>
           <td class="p-2">
             <select id="rdo-trab-vinculo-${index}" data-index="${index}" data-field="vinculo" class="inp-trab w-full bg-slate-50 border border-slate-300 rounded p-1.5 text-xs focus:bg-white">
-              <option value="Próprio (CLT)" ${item.vinculo.includes('Próprio') ? 'selected' : ''}>Próprio (CLT)</option>
-              <option value="Terceirizado (Subempreiteiro)" ${item.vinculo.includes('Terc') || item.vinculo.includes('Sub') ? 'selected' : ''}>Terceirizado / Subempreiteiro</option>
+              <option value="Próprio (CLT)" ${(item.vinculo||'').includes('Próprio') ? 'selected' : ''}>Próprio (CLT)</option>
+              <option value="Terceirizado (Subempreiteiro)" ${(item.vinculo||'').includes('Terc') || (item.vinculo||'').includes('Sub') ? 'selected' : ''}>Terceirizado / Subempreiteiro</option>
             </select>
           </td>
           <td class="p-2 text-center">
@@ -11490,7 +11484,7 @@
               </div>
               <div class="min-w-0">
                 <button type="button" data-id="${c.id}" class="btn-abrir-ficha-colab font-bold text-slate-900 hover:text-amber-600 text-left block leading-tight truncate max-w-[190px]" title="Clique para abrir a ficha completa de ${c.nome}">${c.nome}</button>
-                <span class="text-[10px] text-slate-500">${c.funcao} · <strong>${c.vinculo.includes("CLT") ? "CLT" : "Terc."}</strong></span>
+                <span class="text-[10px] text-slate-500">${c.funcao} · <strong>${(c.vinculo||'').includes("CLT") ? "CLT" : ((c.vinculo||'') ? "Terc." : "—")}</strong></span>
               </div>
             </div>
           </td>
@@ -12021,7 +12015,7 @@
         const scan = escanearFrequenciaColaborador(c);
         const tr = document.createElement("tr");
         tr.className = "hover:bg-slate-50 transition";
-        const isClt = c.vinculo.includes("CLT") || c.vinculo.includes("Próprio");
+        const isClt = (c.vinculo||'').includes("CLT") || (c.vinculo||'').includes("Próprio");
         const badgeVinc = isClt
           ? `<span class="bg-blue-100 text-blue-900 border border-blue-200 text-[10px] font-bold px-2 py-0.5 rounded-full">CLT</span>`
           : `<span class="bg-orange-100 text-orange-900 border border-orange-200 text-[10px] font-bold px-2 py-0.5 rounded-full">Terceirizado</span>`;
@@ -14319,6 +14313,7 @@
     // B. RESPONSÁVEL TÉCNICO FIXO NA OBRA (TAIANE CREA ATIVO) + PERMISSÕES & CREA POR USUÁRIO
     // ----------------------------------------------------------------------------
     (function migrarRdosEObrasParaTaianeRt() {
+      return; /* desativado: não força mais responsável técnico, CREA nem prazo em obras e RDOs */
       try {
         // 1. Garante que todas as obras tenham a Engª Taiane Furlan Palmiro (CREA-MG 218.450/D) como RT titular
         Object.keys(dadosObras).forEach(k => {
@@ -14368,21 +14363,18 @@
     })();
 
     window.obterRtDaObra = function(nomeObra) {
-      const ob = dadosObras[nomeObra] || dadosObras["UBS - Nova Passos"];
-      const respNome = (ob && ob.resp) ? ob.resp : "Taiane Furlan Palmiro";
+      const ob = Object.values(dadosObras).find(o => o && o.nome === nomeObra) || dadosObras[nomeObra];
+      const respNome = (ob && (ob.resp || ob.responsavelTecnico)) ? (ob.resp || ob.responsavelTecnico) : "";
       const users = getUsuariosDb();
-      const uRt = users.find(u => u.nome === respNome && u.creaAtivo);
-      const creaStr = (uRt && uRt.creaNumero) ? uRt.creaNumero : ((ob && ob.crea) ? ob.crea : "CREA-MG 218.450/D");
-      return { nome: respNome, crea: creaStr, labelCompleta: `Engª ${respNome} (${creaStr})` };
+      const uRt = respNome ? users.find(u => u.nome === respNome && u.creaAtivo) : null;
+      const creaStr = (uRt && uRt.creaNumero) ? uRt.creaNumero : ((ob && ob.crea) ? ob.crea : "");
+      return { nome: respNome, crea: creaStr, labelCompleta: respNome ? (creaStr ? `${respNome} (${creaStr})` : respNome) : "Responsável técnico não informado" };
     };
 
     window.atualizarSelectRtGestaoObra = function(nomeObra) {
       const selRt = document.getElementById("gestao-select-rt-obra");
       const users = getUsuariosDb();
       const engenheirosComCrea = users.filter(u => u.creaAtivo);
-      if (engenheirosComCrea.length === 0) {
-        engenheirosComCrea.push({ nome: "Taiane Furlan Palmiro", creaNumero: "CREA-MG 218.450/D" });
-      }
       const rtAtual = window.obterRtDaObra(nomeObra);
 
       if (selRt) {
@@ -14393,9 +14385,9 @@
 
       const dispNovo = document.getElementById("resp-fixo-display");
       const selRespHidden = document.getElementById("resp-select");
-      if (dispNovo) dispNovo.value = `${rtAtual.nome} (${rtAtual.crea})`;
+      if (dispNovo) dispNovo.value = rtAtual.labelCompleta;
       if (selRespHidden) {
-        selRespHidden.innerHTML = `<option value="${rtAtual.nome}" selected>${rtAtual.nome}</option>`;
+        selRespHidden.innerHTML = `<option value="${rtAtual.nome}" selected>${rtAtual.nome || "Responsável técnico não informado"}</option>`;
         selRespHidden.value = rtAtual.nome;
       }
     };
@@ -14405,7 +14397,7 @@
       const nomeObra = selObra ? selObra.value : "UBS - Nova Passos";
       const users = getUsuariosDb();
       const uRt = users.find(u => u.nome === novoRespNome);
-      const creaNovo = (uRt && uRt.creaNumero) ? uRt.creaNumero : "CREA-MG 218.450/D";
+      const creaNovo = (uRt && uRt.creaNumero) ? uRt.creaNumero : "";
 
       if (dadosObras[nomeObra]) {
         dadosObras[nomeObra].resp = novoRespNome;
@@ -14583,9 +14575,7 @@
     // ----------------------------------------------------------------------------
     // C. ATIVIDADES DA OBRA EM LISTA ITEM POR ITEM (BLOQUEANDO TEXTO CORRIDO)
     // ----------------------------------------------------------------------------
-    window.currentServicosLista = [
-      { etapa: "Fundação e Estrutura", texto: "Continuidade das frentes de serviço conforme cronograma executivo da obra" }
-    ];
+    window.currentServicosLista = [];
 
     window.parseServicosStringParaLista = function(str) {
       if (!str || !str.trim()) return [];
@@ -14822,8 +14812,9 @@
     // E. CÁLCULO DE QUANTOS DIAS FALTAM PARA TERMINAR A OBRA
     // ----------------------------------------------------------------------------
     window.calcularDiasRestantesObra = function(nomeObra, dataRefStr) {
-      const ob = dadosObras[nomeObra] || dadosObras["UBS - Nova Passos"];
-      const dataFimIso = (ob && ob.dataFim) ? ob.dataFim : "2026-12-30";
+      const ob = Object.values(dadosObras).find(o => o && o.nome === nomeObra) || dadosObras[nomeObra];
+      const dataFimIso = (ob && (ob.dataFim || ob.previsaoConclusao)) ? (ob.dataFim || ob.previsaoConclusao) : "";
+      if (!dataFimIso) return { diasRestantes: null, dataFimFormatada: "", textoBadge: "" };
       const refIso = normalizarDataIso(dataRefStr) !== "0000-00-00" ? normalizarDataIso(dataRefStr) : new Date().toISOString().split("T")[0];
       const dFim = new Date(dataFimIso + "T12:00:00");
       const dRef = new Date(refIso + "T12:00:00");
@@ -15335,7 +15326,7 @@
         return true;
       });
 
-      const lote = filtrados.slice(0, 35);
+      const lote = filtrados;
       const desc = `${filtroObra === 'todas' ? 'Todas as Obras' : filtroObra} (${lote.length} diários)`;
       window.imprimirLoteRdosPorLista(lote, desc);
     };
@@ -15355,7 +15346,7 @@
       });
 
       const desc = `${dataIni ? formatDate(dataIni) : 'Início'} a ${dataFim ? formatDate(dataFim) : 'Fim'}`;
-      window.imprimirLoteRdosPorLista(rdosNoPeriodo.slice(0, 40), desc);
+      window.imprimirLoteRdosPorLista(rdosNoPeriodo, desc);
     };
 
     // Atualiza renderHistorico e abrirModalVisualizarRdo para mostrar:
@@ -15458,7 +15449,7 @@
             <p class="text-xs text-slate-500 font-medium">${rdo.cliente}</p>
             ${htmlListaAtividades}
             <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-600 pt-1">
-              <span>👷‍♀️ RT Obra: <strong>${rt.nome} (${rt.crea})</strong></span>
+              <span>👷‍♀️ RT Obra: <strong>${rt.labelCompleta || 'Responsável técnico não informado'}</strong></span>
               <span>•</span>
               <span>Efetivo: <strong>${totalPessoas}</strong> operários</span>
               ${rdo.fotos && rdo.fotos.length > 0 ? `<span>• 📷 <strong>${rdo.fotos.length} foto(s) em pastas</strong></span>` : ''}

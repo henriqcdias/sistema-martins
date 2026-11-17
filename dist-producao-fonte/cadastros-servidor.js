@@ -1011,7 +1011,8 @@
   // O Financeiro legado grava só no navegador e fica oculto pelo index.html. Esta página é a entrada
   // do financeiro no servidor: resumo das despesas e atalhos para os cadastros financeiros.
   const ATALHOS = [['despesas', 'Despesas', 'Lançar, conferir, aprovar, pagar e conciliar'], ['centros_custo', 'Centros de custo', 'Obra ou administrativo, sem texto livre'],
-    ['contas_bancarias', 'Contas bancárias', 'Contas por empresa'], ['fornecedores', 'Fornecedores e beneficiários', 'CPF/CNPJ único por empresa']];
+    ['contas_bancarias', 'Contas bancárias', 'Contas por empresa'], ['fornecedores', 'Fornecedores e beneficiários', 'CPF/CNPJ único por empresa'],
+    ['contas_receber', 'Contas a receber', 'Títulos, recebimentos parciais e estorno'], ['gastos_obra', 'Gastos da obra', 'Material consumido + despesas diretas, por obra']];
   let resumoEmCurso = null;
   function montarFinanceiro() {
     const view = D.getElementById('view-financeiro');
@@ -1022,7 +1023,7 @@
       el('p', { texto: 'Dados gravados no servidor e compartilhados com a equipe autorizada da empresa ativa.' }),
       el('div', { classe: 'fin-resumo', 'data-fin': 'resumo' }),
       el('div', { classe: 'fin-atalhos', 'data-fin': 'atalhos' }),
-      el('p', { classe: 'fin-pendente', texto: 'Ainda não ligados ao servidor: fluxo de caixa, DRE/DFC, contas a receber e conciliação por extrato (OFX/CSV). Esses relatórios serão liberados quando os contratos correspondentes forem concluídos.' }));
+      el('p', { classe: 'fin-pendente', texto: 'Já no servidor: despesas, contas a receber (recebimentos e estornos) e gastos por obra. Ainda não ligados: fluxo de caixa, DRE/DFC e conciliação por extrato (OFX/CSV); esses relatórios serão liberados quando os contratos correspondentes forem concluídos.' }));
     view.prepend(sec);
     new MutationObserver(() => { if (!view.classList.contains('hidden') && view.offsetParent !== null) atualizarFinanceiro(); }).observe(view, { attributes: true, attributeFilter: ['class', 'style'] });
     if (view.offsetParent !== null) atualizarFinanceiro();
@@ -1038,7 +1039,7 @@
         if (!atalhos.children.length) atalhos.append(el('p', { texto: 'Seu vínculo não tem acesso ao Financeiro desta empresa. Peça a liberação ao Master.' }));
         if (!pode('despesas', 'ler')) { resumo.replaceChildren(); return; }
         const despesas = await listarTodos('despesas');
-        const mes = new Date().toISOString().slice(0, 7);
+        const mes = hojeLocal().slice(0, 7);
         const ativas = despesas.filter(r => r.dados.estado !== 'cancelado');
         const pendentes = ativas.filter(r => (r.dados.estado || 'pendente_conferencia') === 'pendente_conferencia');
         const doMes = ativas.filter(r => String(r.dados.competencia || '').startsWith(mes));

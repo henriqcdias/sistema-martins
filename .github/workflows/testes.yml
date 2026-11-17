@@ -48,3 +48,5 @@ jobs:
         run: node supabase/v12/validar-v12.cjs .
       - name: Contratos v13 (backup e restauração)
         run: node supabase/v13/validar-v13.cjs .
+      - name: Contratos v14 (fluxo do orçamento)
+        run: node supabase/v14/validar-v14.cjs .

@@ -36,8 +36,8 @@
  // As cópias para os renderizadores legados não são a fonte dos dados editáveis.
  const seguro=x=>typeof x==='string'?x.replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'’').replaceAll('\\','＼'):Array.isArray(x)?x.map(seguro):x&&typeof x==='object'?Object.fromEntries(Object.entries(x).map(([k,v])=>[k,seguro(v)])):x;
  function listar(m){return [...dados[m].values()].map(r=>({...clone(r.dados),id:r.id,empresaId:r.empresa_id,empresa_id:r.empresa_id,remote_id:r.id,rowVersion:r.revisao,revisao:r.revisao}));}
- function visao(m){return seguro(listar(m).map(r=>({...r,empresa:contexto()?.vinculos.find(v=>v.empresa_id===r.empresa_id)?.nomeEmpresa||'',...(m==='funcionarios'?{obraId:r.obra_id||null,obra:catalogos.obras.find(o=>o.id===r.obra_id)?.nome||''}:{}),...(m==='orcamentos'?{num:r.numero?'ORC-'+String(r.numero).padStart(4,'0'):'',valorTotal:r.total,status:(!r.status||r.status==='Em Orçamento')?'Em elaboração':r.status,obra:catalogos.obras.find(o=>o.id===r.obra_id)?.nome||'',vendedor:r.vendedorResponsavel||''}:{})})));}
- function tabelaFrequencia(){const out={};for(const r of listar('frequencia')){out[r.data]??={};const p=out[r.data][r.funcionario_id]??={colabId:r.funcionario_id,nome:catalogos.funcionarios.find(x=>x.id===r.funcionario_id)?.nome||'',status:r.situacao,horas:0,he50:0,he100:0,alocacoes:[]};p.horas+=Number(r.horas_normais);p.he50+=Number(r.horas_extras||0);p.obra=r.obra_id||'';p.obraId=r.obra_id||'';p.rowVersion=r.revisao;p.alocacoes.push(r);}return seguro(out);}
+ function visao(m){return seguro(listar(m).map(r=>({...r,empresa:contexto()?.vinculos.find(v=>v.empresa_id===r.empresa_id)?.nomeEmpresa||'',...(m==='funcionarios'?{obraId:r.obra_id||null,obra:catalogos.obras.find(o=>o.id===r.obra_id)?.nome||'',funcao:r.funcao||'',vinculo:r.vinculo||'',status:r.status||'Ativo'}:{}),...(m==='orcamentos'?{num:r.numero?'ORC-'+String(r.numero).padStart(4,'0'):'',valorTotal:r.total,status:(!r.status||r.status==='Em Orçamento')?'Em elaboração':r.status,obra:catalogos.obras.find(o=>o.id===r.obra_id)?.nome||'',vendedor:r.vendedorResponsavel||''}:{})})));}
+ function tabelaFrequencia(){const out={};for(const r of listar('frequencia')){out[r.data]??={};const p=out[r.data][r.funcionario_id]??={colabId:r.funcionario_id,nome:catalogos.funcionarios.find(x=>x.id===r.funcionario_id)?.nome||'',status:r.situacao,horas:0,he50:0,he100:0,alocacoes:[]};p.horas+=Number(r.horas_normais);p.he50+=Number(r.horas_extras||0);p.obra=catalogos.obras.find(o=>o.id===r.obra_id)?.nome||'';p.obraId=r.obra_id||'';p.rowVersion=r.revisao;p.alocacoes.push(r);const bruto=dados.frequencia.get(r.id);if(bruto){const quem=bruto.criado_por&&bruto.criado_por===contexto()?.uid?(contexto()?.nome||'você'):'outro usuário';p.inseridoPor=quem;p.dataHoraInsercao=bruto.criado_em?new Date(bruto.criado_em).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}):'';p.origem='Frequência (servidor)';}}return seguro(out);}
  // O código antigo copiava a lista de orçamentos/pedidos (agora vinda do servidor) para o navegador. Essas cópias locais
  // não são mais gravadas: a única fonte é o servidor.
  try{const original=Storage.prototype.setItem;Storage.prototype.setItem=function(chave,valor){if(this===W.localStorage&&/^cm_(orcamentos_|pedidos_venda_db|previsao_recebimentos_vendas_db|supabase_cloud_tables_v16)/.test(String(chave)))return;return original.call(this,chave,valor);};}catch{}
@@ -65,13 +65,25 @@
   for(const f of D.querySelectorAll('#form-novo-orcamento-venda'))if(!el('orc-inp-obra')){const label=D.createElement('label');label.textContent='Obra vinculada (opcional)';const select=D.createElement('select');select.id='orc-inp-obra';select.className='w-full border rounded p-2';label.append(select);f.prepend(label);}
   for(const s of D.querySelectorAll('.sel-trab-cadastrado')){const item=typeof currentTrabalhadores!=='undefined'?currentTrabalhadores[Number(s.dataset.index)]:null;preencherSelect(s,catalogos.funcionarios,'Selecione o funcionário');if(item?.funcionario_id&&catalogos.funcionarios.some(x=>x.id===item.funcionario_id))s.value=item.funcionario_id;}
 
+  // Frequência: contagens reais (a tela antiga trazia "54 funcionários" fixo) e sem o ranking de uso feito de dados locais.
+  {const n=catalogos.funcionarios.length;for(const th of D.querySelectorAll('#tbody-auditoria-ponto')){const cab=th.closest('table')?.querySelector('thead th');if(cab&&/Funcionário Ativo/.test(cab.textContent)&&cab.textContent!==`Funcionário Ativo (${n})`)cab.textContent=`Funcionário Ativo (${n})`;}
+   const opt=el('opt-todos-funcionarios-ativos');if(opt&&opt.textContent!==`Mostrar Todos os ${n} Funcionários Ativos`)opt.textContent=`Mostrar Todos os ${n} Funcionários Ativos`;
+   for(const h of D.querySelectorAll('h4'))if(/Top 3 Usu[aá]rios/.test(h.textContent)){let bloco=h.parentElement;while(bloco&&bloco.parentElement&&!/Ver Registro de Atividades/.test(bloco.textContent))bloco=bloco.parentElement;if(bloco&&bloco.textContent.length<3000&&!bloco.hidden){bloco.hidden=true;bloco.dataset.ocultoProducao='ranking-uso-local';}}}
+  // RDO: botão para carregar a equipe lançada na Frequência para a obra e a data escolhidas.
+  {const ref=el('btn-replicar-equipe');if(ref&&!el('btn-equipe-da-frequencia')){const b=D.createElement('button');b.type='button';b.id='btn-equipe-da-frequencia';b.className=ref.className;b.textContent='Equipe da Frequência (obra e data)';b.addEventListener('click',()=>equipeDaFrequencia());ref.after(b);}}
+  // Frequência: "Aplicar a todos" usa as obras do servidor (a lista antiga trazia obras de exemplo).
+  {const lote=el('sel-lote-destino-ponto');if(lote?.tagName==='SELECT'){const assinatura=JSON.stringify(catalogos.obras.map(o=>o.id));if(lote.dataset.catalogoProducao!==assinatura){lote.dataset.catalogoProducao=assinatura;lote.replaceChildren(new Option('Aplicar a todos sem marcação...',''));const g1=D.createElement('optgroup');g1.label='🏗️ Obras';for(const o of catalogos.obras)g1.append(new Option(o.nome,'OBRA:'+o.id));if(catalogos.obras.length)lote.append(g1);const g2=D.createElement('optgroup');g2.label='⚠️ Situações';for(const [v,n] of [['falta','Falta'],['folga','Folga'],['ferias','Férias'],['atestado','Atestado']])g2.append(new Option(n,'STATUS:'+v));lote.append(g2);}}}
   // Orçamento: cliente, vendedor, obra e produto vêm do cadastro compartilhado, não de listas fixas do código antigo.
   if(el('orc-select-cliente-cadastrado')?.tagName==='SELECT')preencherSelect(el('orc-select-cliente-cadastrado'),Array.isArray(catalogos.clientes)?catalogos.clientes:[],'-- Selecionar cliente cadastrado --');
   if(el('orc-inp-vendedor-responsavel')?.tagName==='SELECT')preencherSelect(el('orc-inp-vendedor-responsavel'),Array.isArray(catalogos.vendedores)?catalogos.vendedores:[],'Selecione o vendedor (opcional)');
   if(el('orc-select-obra-destino')?.tagName==='SELECT')preencherSelect(el('orc-select-obra-destino'),catalogos.obras,catalogos.obras.length?'Selecione a obra':'Nenhuma obra cadastrada nesta empresa');
   for(const s of D.querySelectorAll('#form-novo-orcamento-venda select'))if(!s.id&&/Escolher Produto do Cat[aá]logo/.test(s.options[0]?.textContent||'')){s.hidden=true;s.closest('div')&&(s.closest('div').title='O catálogo de produtos do orçamento ainda não está no servidor: descreva o item manualmente.');}
   const semObras='Nenhuma obra cadastrada nesta empresa — cadastre em Gestão de Obras';
-  for(const id of ['obra-select','gestao-obra-select','nc-obra','edit-colab-obra','filtro-obra-hist','orc-inp-obra','atividade-obra-select','ficha-inp-obra']){const s=el(id);if(s?.tagName==='SELECT'){preencherSelect(s,catalogos.obras,id==='filtro-obra-hist'?'Todas as obras':(catalogos.obras.length?'Selecione a obra':semObras));if(id==='filtro-obra-hist'&&s.options[0])s.options[0].value='todas';}}
+  // Filtros do Histórico de RDO comparam pelo NOME da obra (o RDO antigo guarda o nome): o valor da opção é o nome.
+  for(const id of ['filtro-obra-hist','periodo-select-obra']){const s=el(id);if(s?.tagName!=='SELECT')continue;const assinatura='nome:'+JSON.stringify(catalogos.obras.map(o=>o.nome));
+   // Telas legadas repovoam o select com dados locais: confere as opções reais, não só a marcação.
+   if(s.dataset.catalogoProducao===assinatura&&JSON.stringify([...s.options].slice(1).map(o=>o.value))===JSON.stringify(catalogos.obras.map(o=>o.nome)))continue;const prev=s.value;s.dataset.catalogoProducao=assinatura;s.replaceChildren(new Option(id==='filtro-obra-hist'?'Todas as obras':'Todas as obras','todas'));for(const o of catalogos.obras)s.add(new Option(o.nome,o.nome));if([...s.options].some(x=>x.value===prev))s.value=prev;}
+  for(const id of ['obra-select','gestao-obra-select','nc-obra','edit-colab-obra','orc-inp-obra','atividade-obra-select','ficha-inp-obra']){const s=el(id);if(s?.tagName==='SELECT'){preencherSelect(s,catalogos.obras,id==='filtro-obra-hist'?'Todas as obras':(catalogos.obras.length?'Selecione a obra':semObras));if(id==='filtro-obra-hist'&&s.options[0])s.options[0].value='todas';}}
   if(el('obra-inp-cliente-select')?.tagName==='SELECT'&&Array.isArray(catalogos.clientes))preencherSelect(el('obra-inp-cliente-select'),catalogos.clientes,'Selecione o cliente (cadastro compartilhado)');
   for(const id of ['select-add-trabalhador','colab-select','rf-colab-select','rel-colab-select'])if(el(id)?.tagName==='SELECT')preencherSelect(el(id),catalogos.funcionarios,'Selecione o funcionário');
   for(const s of D.querySelectorAll('.sel-destino-ponto')){
@@ -81,6 +93,9 @@
    for(const x of catalogos.obras)s.add(new Option(x.nome,'OBRA:'+x.id));
    for(const [id,nome] of [['falta','Falta'],['folga','Folga'],['ferias','Férias'],['atestado','Atestado']])s.add(new Option(nome,'STATUS:'+id));
    s.dataset.catalogoProducao=key;if([...s.options].some(o=>o.value===prev))s.value=prev;
+   // O que já está salvo no servidor para esta pessoa e este dia reaparece selecionado (obra ou situação), sem sobrescrever uma escolha ainda não salva.
+   {const tr=s.closest('tr'),dia=val('ponto-data-filtro')||val('freq-input-data')||hoje();const salvo=tr&&tr.dataset.dirty!=='true'?listar('frequencia').find(x=>x.funcionario_id===tr.dataset.colabId&&x.data===dia):null;
+    if(salvo){const alvo=salvo.situacao==='presente'?'OBRA:'+salvo.obra_id:'STATUS:'+salvo.situacao;if([...s.options].some(o=>o.value===alvo))s.value=alvo;}}
    const row=s.closest('tr');if(row&&!row.querySelector('.freq-inp-horas')){const input=D.createElement('input');input.type='number';input.min='0';input.max='8';input.step='0.25';input.className='freq-inp-horas w-20 border rounded p-1';input.setAttribute('aria-label','Horas normais de '+(row.dataset.colabNome||'funcionário'));const obra=s.value.startsWith('OBRA:')?s.value.slice(5):null;const atual=listar('frequencia').find(x=>x.funcionario_id===row.dataset.colabId&&x.obra_id===obra&&x.data===(val('ponto-data-filtro')||val('freq-input-data')));input.value=atual?.horas_normais??8;s.after(input);}
 
   }
@@ -232,7 +247,8 @@
  }
  function trabalhadoresRdo(){
   const list=typeof currentTrabalhadores!=='undefined'?currentTrabalhadores:W.currentTrabalhadores||[];
-  return list.map(t=>{const id=t.funcionario_id||t.colaborador_id||t.id||(uuid(t.nome)?t.nome:null);referencia('funcionarios',id);return {...clone(t),id,funcionario_id:id,nome:catalogos.funcionarios.find(x=>x.id===id).nome};});
+  // Linhas da equipe sem funcionário escolhido são espaços em branco do formulário: não entram no RDO (nem travam o salvamento).
+  return list.filter(t=>t&&(t.funcionario_id||t.colaborador_id||t.id||String(t.nome||'').trim())).map(t=>{const id=t.funcionario_id||t.colaborador_id||t.id||(uuid(t.nome)?t.nome:null);referencia('funcionarios',id);return {...clone(t),id,funcionario_id:id,nome:catalogos.funcionarios.find(x=>x.id===id).nome};});
  }
  async function formularioRdo(form){
   const id=form.dataset.registroProducao||null,obra=referencia('obras',val('obra-select'));
@@ -317,16 +333,61 @@
   if(!Array.isArray(result)||result.length!==itens.length||itens.some(item=>!result.some(x=>x.empresa_id===e&&x.modulo===m&&x.id===item.r&&Number(x.revisao)===item.v+1&&typeof x.repetida==='boolean')))throw Error('Lote não confirmado; conserve as operações pendentes.');
   for(const item of itens){const rows=await api.load(e,m,item.r);if(rows.length!==1||Number(rows[0].revisao)<item.v+1)throw Error('Releitura do lote não confirmou a persistência.');}
  }
- async function frequencia(){
-  if(ocupado)return;const e=requireEmpresa(),data=val('ponto-data-filtro')||val('freq-input-data')||hoje();
+ // Lê as marcações da tela ANTES do envio: se o servidor pedir a senha (depois do F5), a tela é redesenhada e as marcações não podem se perder.
+ function lerFrequenciaDaTela(){
+  const e=requireEmpresa(),data=val('ponto-data-filtro')||val('freq-input-data')||hoje();
   const rows=[...D.querySelectorAll('#tbody-auditoria-ponto tr[data-colab-id]')].filter(r=>r.dataset.dirty==='true');if(!rows.length)throw Error('Altere ou selecione os apontamentos que deseja salvar.');
   const itens=rows.map(row=>{const pessoa=referencia('funcionarios',row.dataset.colabId),destino=row.querySelector('.sel-destino-ponto')?.value||'';if(!destino)throw Error('Escolha obra ou situação para cada linha alterada.');
    const situacao=destino.startsWith('OBRA:')?'presente':destino.replace('STATUS:',''),obra=situacao==='presente'?referencia('obras',destino.slice(5)):null;
    const anterior=listar('frequencia').find(x=>x.funcionario_id===pessoa&&x.data===data&&(x.obra_id||null)===obra);
    const d={funcionario_id:pessoa,obra_id:obra,data,situacao,horas_normais:situacao==='presente'?num(row.querySelector('.freq-inp-horas')?.value||8):0,horas_extras:situacao==='presente'?num(row.querySelector('.freq-inp-he50')?.value)+num(row.querySelector('.freq-inp-he100')?.value):0,obs:row.querySelector('.inp-obs-ponto,.freq-inp-obs')?.value||''};
    return {r:anterior?.id||crypto.randomUUID(),v:anterior?.revisao||0,d,op:crypto.randomUUID()};});
+  return {e,data,rows,itens};
+ }
+ async function frequencia(pre=null){
+  if(ocupado)return;const {e,rows,itens}=pre||lerFrequenciaDaTela();
   ocupado++;try{await W.MartinsProducaoRpc.comRascunho(e,async(estado,persistir)=>{estado.pendentes??={};if(estado.pendentes.frequencia)throw Error('Há frequência pendente. Use Reenviar pendentes.');estado.pendentes.frequencia={lote:true,e,m:'frequencia',itens};await persistir();let result;try{result=await W.MartinsProducaoRpc.lote({e,m:'frequencia',itens});}catch(error){if(recusaDefinitiva(error)){delete estado.pendentes.frequencia;await persistir();}throw error;}await confirmarLote(e,'frequencia',itens,result);delete estado.pendentes.frequencia;await persistir();});rows.forEach(r=>delete r.dataset.dirty);dirty=false;await carregar();mensagem('Frequência confirmada pelo servidor.');}finally{ocupado--;}
  }
+ // Salvar a frequência do dia: o código antigo chamava uma função que não existe neste ambiente e mostrava "sucesso" sem gravar nada.
+ // Agora o botão grava no servidor (lote) e só confirma depois de reler.
+ async function salvarFrequenciaDia(){
+  if(ocupado)return {sucesso:false,erro:'Aguarde a operação em andamento.'};
+  try{const pre=lerFrequenciaDaTela();await comDesbloqueio(()=>frequencia(pre));await carregar();for(const n of ['renderAuditoriaPonto'])try{W[n]?.();}catch{}aviso('Frequência do dia salva no servidor e relida.');return {sucesso:true};}
+  catch(error){aviso(error.message||'Não foi possível salvar a frequência.',true);return {sucesso:false,erro:error.message};}
+ }
+ for(const nome of ['salvarFrequenciaLoteColetivaRpcWork','salvarFrequenciaDiariaDoDia','salvarFrequenciaDiariaCompletaFase31'])try{Object.defineProperty(W,nome,{configurable:false,enumerable:true,get:()=>salvarFrequenciaDia,set:()=>{}});}catch{}
+ D.addEventListener('click',ev=>{if(ev.target.closest?.('#btn-salvar-frequencia-dia')){ev.preventDefault();ev.stopImmediatePropagation();salvarFrequenciaDia();}},true);
+ // RDO ← Frequência: traz para o diário quem foi lançado como PRESENTE nessa obra e nesse dia (horas da frequência), sem duplicar quem já está na equipe.
+ function equipeDaFrequencia(){
+  const obra=val('obra-select'),dia=val('input-data');
+  if(!obra||!dia){aviso('Escolha a obra e a data do RDO para carregar a equipe da Frequência.',true);return;}
+  const regs=listar('frequencia').filter(x=>x.data===dia&&x.obra_id===obra&&x.situacao==='presente');
+  if(!regs.length){aviso('Nenhum funcionário foi lançado como presente nesta obra neste dia na Frequência.',true);return;}
+  const lista=typeof currentTrabalhadores!=='undefined'?currentTrabalhadores:W.currentTrabalhadores;const ja=new Set(lista.map(t=>t.funcionario_id||t.id));let n=0;
+  for(const r of regs){if(ja.has(r.funcionario_id))continue;const f=catalogos.funcionarios.find(x=>x.id===r.funcionario_id);if(!f)continue;lista.push({nome:f.nome,funcao:f.funcao||'',vinculo:'',horas:Number(r.horas_normais)||8,funcionario_id:f.id,id:f.id});n++;}
+  try{renderTrabalhadoresTable();}catch(error){console.warn('Equipe do RDO',error.message);}
+  aviso(n?n+' funcionário(s) carregado(s) da Frequência. Confira e salve o RDO.':'Todos os funcionários da Frequência deste dia já estão na equipe do RDO.');
+ }
+ // "Aplicar a todos": usa as linhas da grade (obras e situações do servidor).
+ D.addEventListener('click',ev=>{
+  if(!ev.target.closest?.('#btn-marcar-todos-presentes'))return;ev.preventDefault();ev.stopImmediatePropagation();
+  const alvo=val('sel-lote-destino-ponto');if(!alvo){aviso('Escolha a obra ou a situação para aplicar.',true);return;}
+  let n=0;for(const tr of D.querySelectorAll('#tbody-auditoria-ponto tr[data-colab-id]')){const s=tr.querySelector('.sel-destino-ponto');if(!s||s.value||![...s.options].some(o=>o.value===alvo))continue;s.value=alvo;s.dispatchEvent(new Event('change',{bubbles:true}));n++;}
+  aviso(n?'Aplicado a '+n+' funcionário(s) sem marcação. Confira e clique em Salvar Frequência do Dia.':'Nenhum funcionário sem marcação para aplicar.');
+ },true);
+ // Abas de RH que ainda só têm dados de demonstração do código antigo: ocultadas, com aviso claro (nada é inventado na tela).
+ const AVISOS_RH={ausencias:['Ausências, faltas e atestados','ausencias'],ferias:['Plano de férias','ausencias'],coletiva:['Frequência coletiva por equipe e turno',null],documentos:['Documentos do funcionário',null],'historico-freq':['Histórico e consultas de frequência',null],equipes:['Equipes por obra',null],vales:['Vales e adiantamentos',null],folha:['Folha e holerites',null]};
+ function avisoAbaRh(id,res){
+  const info=AVISOS_RH[id];if(!info)return;const sub=res?.subviewVisivel&&el(res.subviewVisivel);if(!sub)return;
+  const box=D.createElement('div');box.className='bg-amber-50 border border-amber-300 text-amber-950 rounded-2xl p-5 text-sm space-y-3';box.dataset.rhAviso=id;
+  const t=D.createElement('strong');t.className='block text-base';t.textContent=info[0];box.append(t);
+  const p=D.createElement('p');p.textContent=info[1]?'Os dados de demonstração do código antigo foram ocultados. O registro oficial de ausências, atestados e férias agora é gravado no servidor, em Cadastros e Despesas → Ausências e férias.':'Esta área ainda não grava no servidor. Os dados de demonstração do código antigo foram ocultados para não serem confundidos com dados reais. Ela será liberada quando tiver contratos próprios no servidor.';box.append(p);
+  if(info[1]){const b=D.createElement('button');b.type='button';b.className='bg-slate-900 text-amber-400 font-black text-xs px-3 py-2 rounded-xl';b.textContent='Abrir Ausências e férias';b.onclick=()=>W.MartinsCadastrosServidor?.abrir(info[1]);box.append(b);}
+  sub.replaceChildren(box);
+ }
+ {let original=W.abrirAbaUnificadaRhEFrequenciaV190;
+  const embrulho=function(id){const r=typeof original==='function'?original.apply(this,arguments):undefined;try{avisoAbaRh(String(id||''),r);}catch{}return r;};
+  try{Object.defineProperty(W,'abrirAbaUnificadaRhEFrequenciaV190',{configurable:true,enumerable:true,get:()=>embrulho,set:f=>{original=f;}});}catch{}}
  function inicializar(){
   instalarLeituras();D.body.dataset.sessaoProducao='inativa';
   W.verificarSessaoAtivaOuExpirada=()=>({ativa:!!contexto(),motivo:contexto()?'SUPABASE_AUTH_V5':'SEM_SESSAO'});

@@ -61,6 +61,7 @@
       ['fornecedor_id', 'Fornecedor', 'ref', { catalogo: 'fornecedores', vazio: 'Não informado' }],
       ['centro_custo_id', 'Centro de custo', 'ref', { catalogo: 'centros_custo', vazio: 'Não informado' }],
       ['rendimento', 'Rendimento / custo por metro', 'texto'], ['observacao', 'Observação', 'area']] },
+    estoque: { titulo: 'Estoque', colunas: [], campos: [] },
     epis: { titulo: 'EPIs e uniformes', colunas: ['codigo', 'nome', 'tamanho', 'estoque_minimo'], campos: [
       ['nome', 'Descrição', 'texto', { obrigatorio: true }], ['codigo', 'Código de referência', 'texto'], ['categoria', 'Categoria', 'texto'],
       ['tamanho', 'Tamanho / numeração', 'texto'], ['preco_centavos', 'Preço unitário de custo (R$)', 'dinheiro'], ['estoque_minimo', 'Estoque mínimo para alerta', 'numero']] },
@@ -88,7 +89,7 @@
   };
   const contexto = () => W.obterContextoSegurancaAutenticadoWork?.() || null;
   const vinculo = () => contexto()?.vinculos?.find(v => v.empresa_id === empresa) || null;
-  const pode = (m, a) => vinculo()?.permissoes?.[m]?.[a] === true;
+  const pode = (m, a) => vinculo()?.permissoes?.[m === 'estoque' ? 'estoque_movimentos' : m]?.[a] === true;
   const master = () => vinculo()?.papelServidor === 'master';
   const gravacao = () => W.gravacaoHabilitadaWork?.() === true;
   const reais = c => (Number(c) / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -143,6 +144,7 @@
     await sincronizarSessao();
     mensagem('Consultando o servidor…');
     await carregarCatalogos();
+    if (aba === 'estoque') return carregarEstoque();
     const linhas = await listarTodos(aba);
     registros = new Map(linhas.map(r => [r.id, r]));
     desenhar();
@@ -255,6 +257,63 @@
     if (coluna === 'nome' && !v && d.funcionario_id) return rotuloRef('funcionarios', d.funcionario_id);
     return v ?? '';
   }
+  // ---------- Estoque (v4): movimentações imutáveis; o saldo vem do servidor ----------
+  const TIPOS_MOV = { entrada: 'Entrada', saida: 'Saída', transferencia: 'Transferência', estorno: 'Estorno' };
+  const milli = v => { const n = Number(String(v).trim().replace(/\./g, '').replace(',', '.')); if (!Number.isFinite(n) || n <= 0) throw Error('Informe uma quantidade maior que zero.'); return Math.round(n * 1000); };
+  const qtd = m => (Number(m) / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 3 });
+  let pendenteEstoque = null;
+  async function carregarEstoque() {
+    const [produtos, depositos, saldosBrutos, movs] = await Promise.all([listarTodos('produtos').catch(() => []), listarTodos('depositos').catch(() => []),
+      W.MartinsProducaoRpc.estoqueSaldos(empresa), listarTodos('estoque_movimentos')]);
+    const nomeP = id => { const p = produtos.find(x => x.id === id); return p ? [p.dados.codigo, p.dados.descricao || p.dados.nome].filter(Boolean).join(' · ') : '—'; };
+    const nomeD = id => depositos.find(x => x.id === id)?.dados.nome || (id ? '—' : '');
+    const ativos = l => l.filter(x => x.dados.ativo !== false);
+    const corpo = painel.querySelector('[data-cs=corpo]');
+    const secoes = [];
+    if (pode('estoque', 'criar')) {
+      const sel = (id, lista, rotulo, vazio) => { const s = el('select', { id }); s.add(new Option(vazio, '')); for (const x of lista) s.add(new Option(rotulo(x), x.id)); return s; };
+      const tipo = el('select', { id: 'est-tipo' }); for (const t of ['entrada', 'saida', 'transferencia']) tipo.add(new Option(TIPOS_MOV[t], t));
+      const prod = sel('est-produto', ativos(produtos), x => nomeP(x.id), 'Produto'), orig = sel('est-origem', ativos(depositos), x => x.dados.nome, 'Depósito de origem'), dest = sel('est-destino', ativos(depositos), x => x.dados.nome, 'Depósito de destino');
+      const q = el('input', { id: 'est-qtd', type: 'text', inputmode: 'decimal', placeholder: 'Quantidade', 'aria-label': 'Quantidade' });
+      const motivo = el('input', { id: 'est-motivo', type: 'text', placeholder: 'Motivo / documento (opcional)', maxlength: '500' });
+      const erro = el('p', { classe: 'cs-erro', role: 'alert' });
+      const ajustar = () => { orig.hidden = tipo.value === 'entrada'; dest.hidden = tipo.value === 'saida'; }; tipo.addEventListener('change', ajustar); ajustar();
+      const botao = el('button', { type: 'button', classe: 'cs-primario', texto: 'Registrar movimento', disabled: !gravacao(), onclick: async () => {
+        botao.disabled = true; erro.textContent = '';
+        try {
+          const args = { e: empresa, tipo: tipo.value, produto: prod.value, origem: tipo.value === 'entrada' ? null : orig.value || null, destino: tipo.value === 'saida' ? null : dest.value || null, qtd: milli(q.value), motivo: motivo.value.trim() || null, ref: null };
+          if (!args.produto) throw Error('Escolha o produto.');
+          // Reenvio após falha usa o MESMO identificador: o servidor não baixa duas vezes.
+          const chave = JSON.stringify(args); if (!pendenteEstoque || pendenteEstoque.chave !== chave) pendenteEstoque = { chave, op: crypto.randomUUID() };
+          await W.MartinsProducaoRpc.estoqueMover({ ...args, op: pendenteEstoque.op }); pendenteEstoque = null;
+          mensagem('Movimento registrado e confirmado pelo servidor.'); W.MartinsOperacional?.carregar?.().catch(() => {}); await carregarEstoque();
+        } catch (e) { erro.textContent = traduzir(e); botao.disabled = !gravacao(); }
+      } });
+      secoes.push(el('section', { classe: 'cs-form' }, el('h3', { texto: 'Registrar movimento' }), el('div', { classe: 'cs-acoes' }, tipo, prod, orig, dest, q, motivo, botao), erro,
+        !gravacao() ? el('p', { classe: 'cs-aviso', texto: ERROS.PREVIA_SOMENTE_LEITURA }) : null,
+        !produtos.length || !depositos.length ? el('p', { classe: 'cs-aviso', texto: 'Cadastre ao menos um produto e um depósito (abas Produtos e Depósitos) antes de movimentar.' }) : null));
+    }
+    const saldos = saldosBrutos.map(s => el('tr', {}, el('td', { 'data-rotulo': 'Produto', texto: nomeP(s.produto_id) }), el('td', { 'data-rotulo': 'Depósito', texto: nomeD(s.deposito_id) }), el('td', { 'data-rotulo': 'Saldo', texto: qtd(s.saldo_milli) })));
+    secoes.push(el('section', {}, el('h3', { texto: 'Saldos (calculados pelo servidor)' }), el('div', { classe: 'cs-rolagem' }, el('table', { classe: 'cs-tabela' },
+      el('thead', {}, el('tr', {}, ['Produto', 'Depósito', 'Saldo'].map(t => el('th', { texto: t })))), el('tbody', {}, saldos.length ? saldos : [el('tr', {}, el('td', { colspan: 3, classe: 'cs-vazio', texto: 'Nenhum saldo. Registre uma entrada para começar.' }))])))));
+    const estornados = new Set(movs.filter(m => m.dados.tipo === 'estorno').map(m => m.dados.ref_id));
+    const ordenadas = movs.slice().sort((a, b) => String(b.criado_em).localeCompare(String(a.criado_em))).slice(0, 100);
+    const linhas = ordenadas.map(m => {
+      const d = m.dados, podeEstornar = pode('estoque', 'editar') && d.tipo !== 'estorno' && !estornados.has(m.id);
+      const motivo = el('input', { type: 'text', placeholder: 'Motivo do estorno', 'aria-label': 'Motivo do estorno', maxlength: '500' });
+      return el('tr', {}, el('td', { 'data-rotulo': 'Quando', texto: new Date(m.criado_em).toLocaleString('pt-BR') }), el('td', { 'data-rotulo': 'Tipo', texto: TIPOS_MOV[d.tipo] + (estornados.has(m.id) ? ' (estornado)' : '') }),
+        el('td', { 'data-rotulo': 'Produto', texto: nomeP(d.produto_id) }), el('td', { 'data-rotulo': 'De → Para', texto: [nomeD(d.origem_id), nomeD(d.destino_id)].filter(Boolean).join(' → ') }),
+        el('td', { 'data-rotulo': 'Quantidade', texto: qtd(d.quantidade_milli) }), el('td', { 'data-rotulo': 'Motivo', texto: d.motivo || '' }),
+        el('td', {}, podeEstornar ? el('div', { classe: 'cs-estado' }, motivo, el('button', { type: 'button', classe: 'cs-perigo', texto: 'Estornar', disabled: !gravacao(), onclick: async () => {
+          if (!motivo.value.trim()) { motivo.focus(); mensagem('Informe o motivo do estorno.', true); return; }
+          try { await W.MartinsProducaoRpc.estoqueMover({ e: empresa, op: crypto.randomUUID(), tipo: 'estorno', produto: null, origem: null, destino: null, qtd: null, motivo: motivo.value.trim(), ref: m.id }); mensagem('Movimento estornado.'); await carregarEstoque(); }
+          catch (e) { mensagem(traduzir(e), true); } } })) : null));
+    });
+    secoes.push(el('section', {}, el('h3', { texto: 'Movimentações (as 100 mais recentes)' }), el('div', { classe: 'cs-rolagem' }, el('table', { classe: 'cs-tabela' },
+      el('thead', {}, el('tr', {}, ['Quando', 'Tipo', 'Produto', 'De → Para', 'Quantidade', 'Motivo', ''].map(t => el('th', { texto: t })))), el('tbody', {}, linhas.length ? linhas : [el('tr', {}, el('td', { colspan: 7, classe: 'cs-vazio', texto: 'Nenhuma movimentação.' }))])))));
+    corpo.replaceChildren(...secoes);
+    mensagem('Estoque: ' + saldosBrutos.length + ' saldo(s) e ' + movs.length + ' movimentação(ões) da empresa ativa.');
+  }
   async function mostrarHistorico(reg) {
     const corpo = painel.querySelector('[data-cs=corpo]');
     const voltar = el('button', { type: 'button', classe: 'cs-secundario', texto: '← Voltar à lista', onclick: () => desenhar() });
@@ -354,8 +413,8 @@
     if (!painel) montar();
     painel.hidden = false; D.body.classList.add('cs-aberto');
     try { await sincronizarSessao(); painel.querySelector('[data-cs=empresa]').textContent = (vinculo()?.nomeEmpresa || '') + (master() ? ' · Master' : '') + (gravacao() ? '' : ' · somente leitura'); if (MODULOS[inicial] && pode(inicial, 'ler')) aba = inicial; desenharAbas(); if (aba) await carregarAba();
-      if (preenchimento && aba !== inicial) { mensagem('O cadastro de ' + (MODULOS[inicial]?.titulo || inicial).toLowerCase() + ' ainda não está liberado para o seu vínculo nesta empresa (ou o módulo não foi habilitado no servidor). Nada foi gravado no navegador.', true); return; }
-      if (preenchimento && aba === inicial) {
+      if (preenchimento && inicial !== 'estoque' && aba !== inicial) { mensagem('O cadastro de ' + (MODULOS[inicial]?.titulo || inicial).toLowerCase() + ' ainda não está liberado para o seu vínculo nesta empresa (ou o módulo não foi habilitado no servidor). Nada foi gravado no navegador.', true); return; }
+      if (preenchimento && inicial !== 'estoque' && aba === inicial) {
         if (!pode(aba, 'criar')) { mensagem('Seu vínculo não tem permissão para cadastrar ' + MODULOS[aba].titulo.toLowerCase() + '. Peça a liberação ao Master.', true); return; }
         abrirFormulario(null, preenchimento);
         mensagem('Este cadastro agora é gravado no servidor e compartilhado com a equipe. Confira os dados trazidos do formulário e clique em Salvar.');
@@ -502,6 +561,8 @@
     'form-adicionar-feriado': ['feriados', { 'inp-novo-feriado-data': 'data', 'inp-novo-feriado-nome': 'nome' }],
     'form-cadastrar-preco-insumo': ['precos_insumo', { 'preco-inp-nome': 'nome', 'preco-inp-categoria': 'categoria', 'preco-inp-unidade': 'unidade', 'preco-inp-valor': 'preco_centavos:dinheiro', 'preco-inp-data': 'data', 'preco-inp-rendimento': 'rendimento', 'preco-inp-fornecedor': 'observacao' }],
     'form-cadastrar-estoque-epi': ['epis', { 'cad-epi-nome': 'nome', 'cad-epi-codigo': 'codigo', 'cad-epi-categoria': 'categoria', 'cad-epi-tamanho': 'tamanho', 'cad-epi-preco': 'preco_centavos:dinheiro', 'cad-epi-minimo': 'estoque_minimo:numero' }],
+    'form-movimento-estoque': ['estoque', {}],
+    'form-movimentacao-entrada-saida-fase22': ['estoque', {}],
     'form-registrar-movimentacao-fin': ['despesas', { 'fin-reg-descricao': 'descricao', 'fin-reg-valor': 'valor_centavos:dinheiro', 'fin-reg-vencimento': 'vencimento' }],
   };
   // Não viram cadastro: contas de acesso nascem no Supabase Auth; empresas são provisionadas no banco.
@@ -552,7 +613,7 @@
     salvarNovoDepositoFormUi: 'depositos', cadastrarOuEditarDepositoEstoque: 'depositos', cadastrarDepositoEstoqueRapido: 'depositos',
     salvarItemOuSubitemCentroCustoFase22: 'centros_custo', cadastrarOuEditarCentroDeCusto: 'centros_custo',
     salvarContaBancariaEstab: 'contas_bancarias', salvarEdicaoContaBancariaV171: 'contas_bancarias', cadastrarOuEditarContaCorrenteBancaria: 'contas_bancarias',
-    submeterFormularioPrincipalClienteUi: 'clientes', salvarNovoClienteRapidoForm: 'clientes',
+    salvarMovimentoEstoqueForm: 'estoque', registrarEntradaOuSaidaEstoqueFase22: 'estoque', submeterFormularioPrincipalClienteUi: 'clientes', salvarNovoClienteRapidoForm: 'clientes',
   };
   // Só reage com aviso/painel quando a chamada vem de uma ação recente da pessoa; chamadas automáticas
   // do código legado (ex.: semear dados de demonstração na carga) são recusadas em silêncio.

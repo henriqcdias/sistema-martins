@@ -29,7 +29,7 @@ async function banco() {
     CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$ SELECT nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;`);
   await db.exec(sql('supabase/producao/base/estrutura_anterior_as_migracoes.sql'));
   await db.exec(`INSERT INTO public.martins_empresas(id, razao_social) VALUES ('${E}', 'Construtora Martins - cadastro inicial');`);
-  for (const d of ['supabase/producao/migrations', 'supabase/v2/migrations', 'supabase/v3/migrations'])
+  for (const d of ['supabase/producao/migrations', 'supabase/v2/migrations', 'supabase/v3/migrations', 'supabase/v4/migrations'])
     for (const f of fs.readdirSync(path.join(raiz, d)).sort()) await db.exec(sql(d + '/' + f));
   const [M, L] = Object.values(USUARIOS);
   await db.exec(`INSERT INTO auth.users VALUES ('${M}','master@teste.invalid'),('${L}','lancador@teste.invalid');
@@ -39,7 +39,7 @@ async function banco() {
   return db;
 }
 
-const TIPOS = { e: 'uuid', r: 'uuid', apos: 'uuid', op: 'uuid', v: 'bigint', limite: 'integer', d: 'jsonb', itens: 'jsonb', de: 'date', ate: 'date', m: 'text', estado: 'text', motivo: 'text' };
+const TIPOS = { e: 'uuid', r: 'uuid', apos: 'uuid', op: 'uuid', v: 'bigint', limite: 'integer', d: 'jsonb', itens: 'jsonb', de: 'date', ate: 'date', m: 'text', estado: 'text', motivo: 'text', tipo: 'text', produto: 'uuid', origem: 'uuid', destino: 'uuid', qtd: 'bigint', ref: 'uuid' };
 async function supabase(db, route) {
   const req = route.request(), url = new URL(req.url());
   const json = (status, body) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
@@ -56,8 +56,8 @@ async function supabase(db, route) {
   const m = url.pathname.match(/^\/rest\/v1\/rpc\/(martins_producao_[a-z_]+)$/);
   if (!m) return json(404, { code: '404', message: 'rota não simulada' });
   const args = JSON.parse(req.postData() || '{}');
-  const chaves = Object.keys(args).filter(k => args[k] !== null && args[k] !== undefined);
-  const valores = chaves.map(k => TIPOS[k] === 'jsonb' ? JSON.stringify(args[k]) : args[k]);
+  const chaves = Object.keys(args).filter(k => args[k] !== undefined); // null é enviado, como no PostgREST
+  const valores = chaves.map(k => args[k] === null ? null : TIPOS[k] === 'jsonb' ? JSON.stringify(args[k]) : args[k]);
   try {
     await db.exec(`SET ROLE authenticated; SELECT set_config('request.jwt.claim.sub', '${uid.replace(/[^0-9a-f-]/g, '')}', false);`);
     const r = await db.query(`SELECT public.${m[1]}(${chaves.map((k, i) => `${k} => $${i + 1}::${TIPOS[k]}`).join(', ')}) AS x`, valores);
@@ -388,6 +388,45 @@ async function novo(page, campos) {
     await pm2.waitForTimeout(300);
     check(await pm2.evaluate(() => document.getElementById('edit-colab-salario').value === '3100.5' || document.getElementById('edit-colab-salario').value === '3100.50') &&
       await pm2.$eval('#edit-colab-aso-venc', n => n.value === '2027-01-31'), 'ao reabrir, os dados de RH/SST voltam do servidor');
+
+    console.log('Estoque (v4): cenário A=10 / B=20');
+    const PA = '00000000-0000-4000-8000-0000000000a1', PB = '00000000-0000-4000-8000-0000000000b1', DA = '00000000-0000-4000-8000-0000000000d1', DB = '00000000-0000-4000-8000-0000000000d2', M = USUARIOS['master@teste.invalid'];
+    for (const [mod, rid, dd] of [['produtos', PA, { codigo: 'A', descricao: 'Produto A', ativo: true }], ['produtos', PB, { codigo: 'B', descricao: 'Produto B', ativo: true }], ['depositos', DA, { nome: 'Almoxarifado', principal: true, ativo: true }], ['depositos', DB, { nome: 'Pátio', ativo: true }]])
+      await db.query(`INSERT INTO martins_producao_v1.registros(empresa_id,modulo,id,revisao,dados,criado_por,atualizado_por) VALUES ($1,$2,$3,1,$4::jsonb,$5,$5)`, [E, mod, rid, JSON.stringify(dd), M]);
+    await pm2.evaluate(() => window.MartinsCadastrosServidor.abrir('estoque'));
+    await pm2.waitForSelector('#est-tipo', { timeout: 15000 });
+    const mover = async (tipo, prod, orig, dest, q) => {
+      await pm2.selectOption('#est-tipo', tipo); await pm2.selectOption('#est-produto', prod);
+      if (orig) await pm2.selectOption('#est-origem', orig); if (dest) await pm2.selectOption('#est-destino', dest);
+      await pm2.fill('#est-qtd', q); await pm2.evaluate(() => { document.querySelector('[data-cs=status]').textContent = ''; }); await pm2.click('#cs-painel button:text-is("Registrar movimento")');
+      await pm2.waitForFunction(() => /Estoque: \d+ saldo/.test(document.querySelector('[data-cs=status]')?.textContent || ''));
+    };
+    const saldoTela = async () => pm2.$$eval('#cs-painel section:has(h3:text-is("Saldos (calculados pelo servidor)")) tbody tr', t => Object.fromEntries(t.map(r => [r.children[0].textContent.split(' · ')[0] + '|' + r.children[1].textContent, r.children[2].textContent])));
+    await mover('entrada', PA, null, DA, '10'); await mover('entrada', PB, null, DA, '20');
+    let st = await saldoTela();
+    check(st['A|Almoxarifado'] === '10' && st['B|Almoxarifado'] === '20', 'entradas pela tela: A=10 e B=20 (saldo calculado pelo servidor)');
+    await mover('saida', PA, DA, null, '3');
+    st = await saldoTela();
+    check(st['A|Almoxarifado'] === '7' && st['B|Almoxarifado'] === '20', 'baixar 3 de A: A=7 e B continua 20');
+    await pm2.fill('#est-qtd', '99'); await pm2.selectOption('#est-tipo', 'saida'); await pm2.selectOption('#est-produto', PA); await pm2.selectOption('#est-origem', DA);
+    await pm2.click('#cs-painel button:text-is("Registrar movimento")');
+    await pm2.waitForFunction(() => /Saldo insuficiente/.test(document.querySelector('#cs-painel .cs-erro')?.textContent || ''));
+    check((await saldoTela())['A|Almoxarifado'] === '7', 'baixa maior que o saldo é recusada com mensagem clara e o saldo não muda');
+    await pm2.fill('#cs-painel tbody tr:has-text("Saída") input', 'baixa lançada por engano');
+    await pm2.click('#cs-painel tbody tr:has-text("Saída") button:text-is("Estornar")');
+    await pm2.waitForFunction(() => [...document.querySelectorAll('#cs-painel tbody tr')].some(r => /Estorno/.test(r.textContent)));
+    st = await saldoTela();
+    check(st['A|Almoxarifado'] === '10' && st['B|Almoxarifado'] === '20', 'estornar pela tela volta a A=10 e B=20');
+    check(await pm2.$$eval('#cs-painel tbody tr', t => t.filter(r => /Saída/.test(r.textContent) && /estornado/.test(r.textContent) && !r.querySelector('button')).length === 1), 'a saída estornada não oferece novo estorno (sem efeito duplicado)');
+    await mover('transferencia', PB, DA, DB, '5');
+    st = await saldoTela();
+    check(st['B|Almoxarifado'] === '15' && st['B|Pátio'] === '5', 'transferência entre depósitos: 15 + 5 = 20 (total preservado)');
+    check((await db.query(`SELECT count(*)::int n FROM martins_producao_v1.registros WHERE modulo='estoque_movimentos'`)).rows[0].n === 5, 'no banco: uma movimentação por evento (5; a baixa recusada não grava nada)');
+    await pm2.evaluate(() => window.MartinsCadastrosServidor.fechar());
+    await pm2.evaluate(() => { const f = document.getElementById('form-movimento-estoque'); const m = f.closest('[id^=modal-]'); if (m) { m.classList.remove('hidden'); m.style.display = 'flex'; } f.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true })); });
+    await pm2.waitForSelector('#est-tipo', { timeout: 10000 });
+    check((await semRastroLocal(pm2, 'estoque_movimentos')).length === 0, 'o formulário antigo de movimentação abre o estoque do servidor (nada local)');
+    await pm2.evaluate(() => window.MartinsCadastrosServidor.fechar());
 
     console.log('Rodada 4: ficha, histórico, busca e mensagens');
     await pm2.evaluate(() => { document.getElementById('modal-editar-colaborador').classList.add('hidden'); });

@@ -89,13 +89,15 @@
       '/rest/v1/rpc/martins_producao_catalogos',
       '/rest/v1/rpc/martins_producao_consultar',
       '/rest/v1/rpc/martins_producao_despesas_totais',
-      '/rest/v1/rpc/martins_producao_auditoria'
+      '/rest/v1/rpc/martins_producao_auditoria',
+      '/rest/v1/rpc/martins_producao_estoque_saldos'
     ].includes(path);
     // Gravação só quando o build a habilita explicitamente (homologação); a produção permanece somente leitura.
     const escrita = gravacaoHabilitadaWork() && schema === 'public' && method === 'POST' && [
       '/rest/v1/rpc/martins_producao_salvar',
       '/rest/v1/rpc/martins_producao_salvar_lote',
-      '/rest/v1/rpc/martins_producao_despesa_estado'
+      '/rest/v1/rpc/martins_producao_despesa_estado',
+      '/rest/v1/rpc/martins_producao_estoque_mover'
     ].includes(path);
     const sessaoPermitida = (method === 'POST' && [
       '/auth/v1/token?grant_type=password',
@@ -423,6 +425,8 @@
     salvar:args=>rpcProducao('martins_producao_salvar',args),
     catalogos:e=>rpcProducao('martins_producao_catalogos',{e}),
     lote:args=>rpcProducao('martins_producao_salvar_lote',args),
+    estoqueSaldos:e=>rpcProducao('martins_producao_estoque_saldos',{e}),
+    estoqueMover:args=>rpcProducao('martins_producao_estoque_mover',args),
     auditoria:args=>rpcProducao('martins_producao_auditoria',args),
     despesaEstado:args=>rpcProducao('martins_producao_despesa_estado',args),
     despesasTotais:args=>rpcProducao('martins_producao_despesas_totais',args),

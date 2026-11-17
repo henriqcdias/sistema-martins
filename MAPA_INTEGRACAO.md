@@ -107,3 +107,7 @@ Dos 52 formulários do sistema, nenhum formulário de **cadastro** grava mais s�
 | — Não se aplica | login, primeiro acesso, link compartilhado |
 
 **Ainda falta nas telas antigas:** as listas e os seletores de Vendas, Estoque, Frota e Gestão de Centros de Custo continuam lendo as chaves locais (por exemplo, 7 chaves de centros de custo e 6 de contas bancárias). Os cadastros novos já vão para o servidor e aparecem em "Cadastros e Despesas", no Financeiro, nas obras e nas despesas. A próxima etapa é fazer essas listas lerem do servidor, tela por tela.
+
+## Estoque no servidor (v4, 16/11/2026)
+
+`supabase/v4`: movimentações **imutáveis**, uma por evento de negócio (entrada, saída, transferência e estorno), com o **saldo derivado** no servidor (quantidades em milésimos inteiros). Regras garantidas no banco: saldo nunca negativo (trava por produto contra baixas simultâneas), reenvio da mesma operação não repete o efeito, estorno só uma vez e nunca de estorno, depósito e produto só da própria empresa (transferência entre empresas é impossível), e gravação de movimento só pela função própria (nem o Master forja saldo pelo contrato genérico). Interface: aba **Estoque** em "Cadastros e Despesas"; os formulários antigos de movimentação redirecionam para ela. **Ainda não ligados:** consumo do RDO, requisição de obra, compras/recebimento, reservas, custo médio, devolução com referência a obra e produção (consomem estoque, mas dependem de seus próprios contratos).

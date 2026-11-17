@@ -219,3 +219,11 @@ Não foram tocadas porque não fazem parte do Manual de funções nem dos relat�
 - **Não restaura:** histórico de auditoria anterior, permissões dos usuários e as operações já processadas.
 - **Limite conhecido:** a restauração confia no conteúdo do arquivo (é do Master) e não repete as validações de cada módulo; o checksum protege contra arquivo incompleto ou com registros/revisões alterados, **não** contra edição manual de um valor dentro de `dados`. Tamanho: até 40 MB na tela e 200 mil registros.
 - **Teste de uso real:** exporte da homologação e restaure numa empresa vazia (por exemplo "QA FICTÍCIA — Aços") para provar o ciclo antes de depender dele. Em produção, só com autorização do Henrique.
+
+## Solicitação de material pelo celular e texto do RDO como referência (17/11/2026)
+
+Sem mudança no banco.
+
+- **Modelo de permissões "Mestre de obras (solicita material pelo celular)"** na tela de Usuários e permissões: requisições de material (ver e criar) e leitura de obras, produtos, depósitos e RDOs. **Não** vê Usuários, Backup, Gastos nem Despesas e **não** aprova, recusa nem entrega.
+- Teste de ponta a ponta com esse usuário num **celular de 390 px**: escolhe obra, material e depósito, envia a requisição, ela chega ao servidor como "solicitada", sem rolagem horizontal e sem erro de JavaScript.
+- **Texto livre do RDO:** ao escolher um RDO no **consumo de material** ou na **requisição**, a tela mostra o campo "Materiais e Insumos" do RDO como **referência** (só leitura, sem interpretar o texto) para o lançamento estruturado. O vínculo automático texto→itens não foi feito de propósito: ler texto livre erraria quantidades e produtos e baixaria o estoque errado.

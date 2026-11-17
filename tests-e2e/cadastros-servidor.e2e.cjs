@@ -16,7 +16,7 @@ const raiz = path.resolve(__dirname, '..');
 const QA = 'https://oczxyiakpmgnrpoyhwov.supabase.co';
 const APP = 'http://localhost:4173';
 const E = '4d9b925e-732f-4055-8f52-c40373425dd5';
-const USUARIOS = { 'master@teste.invalid': '11111111-1111-4111-8111-111111111111', 'lancador@teste.invalid': '22222222-2222-4222-8222-222222222222' };
+const USUARIOS = { 'master@teste.invalid': '11111111-1111-4111-8111-111111111111', 'lancador@teste.invalid': '22222222-2222-4222-8222-222222222222', 'mestre@teste.invalid': '33333333-3333-4333-8333-333333333333' };
 let ok = 0, falhas = 0;
 const check = (c, m) => { c ? ok++ : falhas++; console.log(c ? '  ok   ' : '  FALHA', m); };
 
@@ -31,11 +31,11 @@ async function banco() {
   await db.exec(`INSERT INTO public.martins_empresas(id, razao_social) VALUES ('${E}', 'Construtora Martins - cadastro inicial');`);
   for (const d of ['supabase/producao/migrations', 'supabase/v2/migrations', 'supabase/v3/migrations', 'supabase/v4/migrations', 'supabase/v5/migrations', 'supabase/v6/migrations', 'supabase/v7/migrations', 'supabase/v8/migrations', 'supabase/v9/migrations', 'supabase/v10/migrations', 'supabase/v11/migrations', 'supabase/v12/migrations', 'supabase/v13/migrations'])
     for (const f of fs.readdirSync(path.join(raiz, d)).sort()) await db.exec(sql(d + '/' + f));
-  const [M, L] = Object.values(USUARIOS);
-  await db.exec(`INSERT INTO auth.users VALUES ('${M}','master@teste.invalid'),('${L}','lancador@teste.invalid');
-    INSERT INTO public.martins_perfis(usuario_id, empresa_id, nome) VALUES ('${M}','${E}','Master Teste'),('${L}','${E}','Lançador Teste');
-    INSERT INTO public.martins_online_acessos(empresa_id, usuario_id, papel, ativo) VALUES ('${E}','${M}','master',true),('${E}','${L}','operacional',true);
-    INSERT INTO martins_producao_v1.permissoes(usuario_id, empresa_id, modulo, ler, criar, editar) VALUES ('${L}','${E}','despesas',true,true,true);`);
+  const [M, L, MO] = Object.values(USUARIOS);
+  await db.exec(`INSERT INTO auth.users VALUES ('${M}','master@teste.invalid'),('${L}','lancador@teste.invalid'),('${MO}','mestre@teste.invalid');
+    INSERT INTO public.martins_perfis(usuario_id, empresa_id, nome) VALUES ('${M}','${E}','Master Teste'),('${L}','${E}','Lançador Teste'),('${MO}','${E}','Mestre de Obras Teste');
+    INSERT INTO public.martins_online_acessos(empresa_id, usuario_id, papel, ativo) VALUES ('${E}','${M}','master',true),('${E}','${L}','operacional',true),('${E}','${MO}','operacional',true);
+    INSERT INTO martins_producao_v1.permissoes(usuario_id, empresa_id, modulo, ler, criar, editar) VALUES ('${L}','${E}','despesas',true,true,true),('${MO}','${E}','requisicoes_material',true,true,false),('${MO}','${E}','obras',true,false,false),('${MO}','${E}','produtos',true,false,false),('${MO}','${E}','depositos',true,false,false),('${MO}','${E}','rdos',true,false,false);`);
   return db;
 }
 
@@ -504,9 +504,12 @@ async function novo(page, campos) {
     console.log('Consumo de material na obra (v6)');
     const obraQa = (await db.query(`SELECT id FROM martins_producao_v1.registros WHERE modulo='obras' AND dados->>'nome'='QA Obra Engenharia'`)).rows[0].id;
     const RDOID = '00000000-0000-4000-8000-0000000000e1';
-    await db.query(`INSERT INTO martins_producao_v1.registros(empresa_id,modulo,id,revisao,dados,criado_por,atualizado_por) VALUES ($1,'rdos',$2,1,$3::jsonb,$4,$4)`, [E, RDOID, JSON.stringify({ obra_id: obraQa, numero: 1, data: '2026-11-16', status: 'rascunho', trabalhadores: [] }), M]);
+    await db.query(`INSERT INTO martins_producao_v1.registros(empresa_id,modulo,id,revisao,dados,criado_por,atualizado_por) VALUES ($1,'rdos',$2,1,$3::jsonb,$4,$4)`, [E, RDOID, JSON.stringify({ obra_id: obraQa, numero: 1, data: '2026-11-16', status: 'rascunho', trabalhadores: [], materiais: '50 sacos de cimento CP-II (texto livre do RDO)' }), M]);
     await pm2.evaluate(() => window.MartinsCadastrosServidor.abrir('estoque'));
     await pm2.waitForSelector('#co-obra', { timeout: 15000 });
+    await pm2.selectOption('#co-obra', obraQa); await pm2.selectOption('#co-rdo', RDOID);
+    await pm2.waitForSelector('[data-co=ref-rdo]:not([hidden])');
+    check(await pm2.$eval('[data-co=ref-rdo]', n => /50 sacos de cimento CP-II/.test(n.textContent) && /só para referência/.test(n.textContent)), 'ao escolher o RDO, a tela mostra o texto livre de materiais do RDO como referência para lançar o consumo');
     const consumir = async (qtdTxt) => {
       await pm2.selectOption('#co-obra', obraQa); await pm2.selectOption('#co-rdo', RDOID); await pm2.selectOption('#co-deposito', DA); await pm2.selectOption('#co-produto', PA);
       await pm2.fill('#co-qtd', qtdTxt); await pm2.evaluate(() => { document.querySelector('[data-cs=status]').textContent = ''; }); await pm2.click('#cs-painel button:text-is("Registrar consumo")');
@@ -586,7 +589,11 @@ async function novo(page, campos) {
     const antesReq = await saldoA();
     await pm2.evaluate(() => window.MartinsCadastrosServidor.abrir('requisicoes'));
     await pm2.waitForSelector('#rq-obra', { timeout: 15000 });
-    await pm2.selectOption('#rq-obra', obraQa); await pm2.selectOption('#rq-deposito', DA);
+    await pm2.selectOption('#rq-obra', obraQa); await pm2.selectOption('#rq-rdo', RDOID);
+    await pm2.waitForSelector('[data-rq=ref-rdo]:not([hidden])');
+    check(await pm2.$eval('[data-rq=ref-rdo]', n => /50 sacos de cimento CP-II/.test(n.textContent)), 'na requisição, escolher o RDO também mostra o texto livre de materiais como referência');
+    await pm2.selectOption('#rq-rdo', '');
+    await pm2.selectOption('#rq-deposito', DA);
     await pm2.selectOption('#cs-painel [data-linha] select', PA); await pm2.fill('#cs-painel [data-linha] input', '3');
     await pm2.click('#cs-painel button:text-is("Enviar requisição")');
     await pm2.waitForSelector('[data-rq=lista] tbody tr:has-text("Solicitada")');
@@ -713,6 +720,23 @@ async function novo(page, campos) {
     check(true, 'arquivo que não é JSON é recusado antes de qualquer envio');
     check(await semRastroLocal(pm2, 'martins-backup').then(x => x.length === 0), 'o backup não fica guardado no navegador (localStorage)');
     await pm2.evaluate(() => window.MartinsCadastrosServidor.fechar());
+
+    console.log('Mestre de obras no celular (solicita material, sem poder aprovar nem entregar)');
+    const pmo = await entrar(browser, dir, db, 'mestre@teste.invalid', { width: 390, height: 844 });
+    await pmo.evaluate(() => window.MartinsCadastrosServidor.abrir('requisicoes'));
+    await pmo.waitForSelector('#rq-obra', { timeout: 15000 });
+    check(await pmo.$$eval('#rq-obra option', os => os.some(o => /QA Obra Engenharia/.test(o.textContent))) && await pmo.$$eval('#cs-painel [data-linha] select option', os => os.length > 1) && await pmo.$$eval('#rq-deposito option', os => os.length > 1), 'com permissão só de leitura em obras, produtos e depósitos, o mestre consegue escolher obra, material e depósito');
+    await pmo.selectOption('#rq-obra', obraQa); await pmo.selectOption('#rq-deposito', DA);
+    await pmo.selectOption('#cs-painel [data-linha] select', PA); await pmo.fill('#cs-painel [data-linha] input', '2');
+    await pmo.click('#cs-painel button:text-is("Enviar requisição")');
+    await pmo.waitForSelector('[data-rq=lista] tbody tr:has-text("Solicitada")');
+    const dosMestre = (await db.query(`SELECT dados FROM martins_producao_v1.registros WHERE modulo='requisicoes_material' AND criado_por=$1`, ['33333333-3333-4333-8333-333333333333'])).rows;
+    check(dosMestre.length === 1 && dosMestre[0].dados.estado === 'solicitada' && dosMestre[0].dados.itens[0].qtd_milli === 2000, 'o mestre envia a requisição pelo celular e ela chega ao servidor como "solicitada"');
+    check(await pmo.$eval('[data-rq=lista]', n => !/Aprovar|Recusar|Entregar/.test(n.textContent)), 'o mestre não vê botões de aprovar, recusar nem entregar');
+    check(await pmo.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), 'sem rolagem horizontal no celular (390 px)');
+    check(pmo.erros.length === 0, 'nenhuma exceção JavaScript na sessão do mestre' + (pmo.erros.length ? ': ' + pmo.erros.join(' | ') : ''));
+    const abasMo = await pmo.$$eval('#cs-painel .cs-aba', ns => ns.map(n => n.textContent));
+    check(!abasMo.includes('Usuários e permissões') && !abasMo.includes('Backup e restauração') && !abasMo.includes('Gastos da obra') && !abasMo.includes('Despesas'), 'o mestre não vê as abas de Usuários, Backup, Gastos nem Despesas');
 
     console.log('Rodada 4: ficha, histórico, busca e mensagens');
     await pm2.evaluate(() => { document.getElementById('modal-editar-colaborador').classList.add('hidden'); });

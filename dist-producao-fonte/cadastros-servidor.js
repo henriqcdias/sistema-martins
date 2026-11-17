@@ -347,6 +347,8 @@
       const so = (id, lista, vazio) => { const s = el('select', { id }); s.add(new Option(vazio, '')); for (const [v, t] of lista) s.add(new Option(t, v)); return s; };
       const obraSel = so('co-obra', (catalogos.obras || []).map(o => [o.id, o.nome]), 'Obra'), rdoSel = so('co-rdo', [], 'RDO (opcional)');
       obraSel.addEventListener('change', () => { rdoSel.replaceChildren(new Option('RDO (opcional)', '')); for (const r of rdosTodos.filter(x => x.dados.obra_id === obraSel.value).sort((a, b) => String(b.dados.data).localeCompare(String(a.dados.data)))) rdoSel.add(new Option('RDO ' + r.dados.numero + ' · ' + String(r.dados.data).split('-').reverse().join('/'), r.id)); });
+      const refRdo = el('p', { classe: 'cs-aviso', 'data-co': 'ref-rdo', hidden: true });
+      rdoSel.addEventListener('change', () => { const r = rdosTodos.find(x => x.id === rdoSel.value), txt = String(r?.dados?.materiais || '').trim(); refRdo.hidden = !txt; refRdo.textContent = txt ? 'Materiais informados no RDO (texto livre, só para referência): ' + txt : ''; });
       const depSel = so('co-deposito', ativos(depositos).map(x => [x.id, x.dados.nome]), 'Depósito'), prodSel = so('co-produto', ativos(produtos).map(x => [x.id, nomeP(x.id)]), 'Material');
       const qc = el('input', { id: 'co-qtd', type: 'text', inputmode: 'decimal', placeholder: 'Quantidade', 'aria-label': 'Quantidade consumida' }), erroC = el('p', { classe: 'cs-erro', role: 'alert' });
       const bc = el('button', { type: 'button', classe: 'cs-primario', texto: 'Registrar consumo', disabled: !gravacao(), onclick: async () => {
@@ -359,7 +361,7 @@
           mensagem('Consumo registrado: baixa única no estoque.'); await carregarEstoque();
         } catch (e) { erroC.textContent = traduzir(e); bc.disabled = !gravacao(); }
       } });
-      secoes.push(el('section', { classe: 'cs-form' }, el('h3', { texto: 'Consumo de material na obra' }), el('div', { classe: 'cs-acoes' }, obraSel, rdoSel, depSel, prodSel, qc, bc), erroC,
+      secoes.push(el('section', { classe: 'cs-form' }, el('h3', { texto: 'Consumo de material na obra' }), el('div', { classe: 'cs-acoes' }, obraSel, rdoSel, depSel, prodSel, qc, bc), refRdo, erroC,
         el('p', { classe: 'cs-aviso', texto: 'Um material só pode ser baixado uma vez por RDO. Se baixou a mais, registre uma devolução na linha do consumo (abaixo).' })));
     }
     const saldos = saldosBrutos.map(s => el('tr', {}, el('td', { 'data-rotulo': 'Produto', texto: nomeP(s.produto_id) }), el('td', { 'data-rotulo': 'Depósito', texto: nomeD(s.deposito_id) }), el('td', { 'data-rotulo': 'Saldo', texto: qtd(s.saldo_milli) })));
@@ -557,7 +559,9 @@
       const obra = el('select', { id: 'rq-obra' }); obra.add(new Option('Obra', '')); for (const o of catalogos.obras || []) obra.add(new Option(o.nome, o.id));
       const rdo = el('select', { id: 'rq-rdo' });
       const preencherRdos = () => { rdo.replaceChildren(); rdo.add(new Option('Sem RDO específico', '')); for (const r of rdos.filter(x => x.dados.obra_id === obra.value)) rdo.add(new Option('RDO nº ' + (r.dados.numero ?? '') + ' · ' + String(r.dados.data || '').split('-').reverse().join('/'), r.id)); };
-      preencherRdos(); obra.addEventListener('change', preencherRdos);
+      const refRdo = el('p', { classe: 'cs-aviso', 'data-rq': 'ref-rdo', hidden: true });
+      rdo.addEventListener('change', () => { const r = rdos.find(x => x.id === rdo.value), txt = String(r?.dados?.materiais || '').trim(); refRdo.hidden = !txt; refRdo.textContent = txt ? 'Materiais informados no RDO (texto livre, só para referência): ' + txt : ''; });
+      preencherRdos(); obra.addEventListener('change', () => { preencherRdos(); refRdo.hidden = true; refRdo.textContent = ''; });
       const dep = el('select', { id: 'rq-deposito' }); dep.add(new Option('Depósito de origem', '')); for (const x of depositos.filter(z => z.dados.ativo !== false)) dep.add(new Option(x.dados.nome, x.id));
       const quando = el('input', { id: 'rq-data', type: 'date', 'aria-label': 'Necessário em' }); const obs = el('input', { id: 'rq-obs', type: 'text', placeholder: 'Observação (opcional)', maxlength: '500' });
       const linhas = el('div', {}); const erro = el('p', { classe: 'cs-erro', role: 'alert' });
@@ -573,7 +577,7 @@
           mensagem('Requisição enviada e confirmada pelo servidor.'); await carregarRequisicoes();
         } catch (e) { erro.textContent = traduzir(e); enviar.disabled = !gravacao(); }
       } });
-      secoes.push(el('section', { classe: 'cs-form' }, el('h3', { texto: 'Nova requisição de material' }), el('div', { classe: 'cs-acoes' }, obra, rdo, dep, quando), obs, linhas,
+      secoes.push(el('section', { classe: 'cs-form' }, el('h3', { texto: 'Nova requisição de material' }), el('div', { classe: 'cs-acoes' }, obra, rdo, dep, quando), refRdo, obs, linhas,
         el('div', { classe: 'cs-acoes' }, el('button', { type: 'button', classe: 'cs-secundario', texto: '+ Item', onclick: novaLinha }), enviar), erro,
         !produtos.length ? el('p', { classe: 'cs-aviso', texto: 'Cadastre produtos e depósitos antes de requisitar materiais.' }) : null));
     }
@@ -625,6 +629,7 @@
   // Modelos são só um atalho: preenchem a tela, o Master confere e salva. l = ver, c = criar, e = editar.
   const MODELOS = {
     'Almoxarife': { estoque_movimentos: 'lce', epis: 'lce', produtos: 'l', depositos: 'l', pedidos_compra: 'l', recebimentos_compra: 'l', requisicoes_material: 'l', obras: 'l', rdos: 'l' },
+    'Mestre de obras (solicita material pelo celular)': { requisicoes_material: 'lc', obras: 'l', produtos: 'l', depositos: 'l', rdos: 'l' },
     'Engenharia': { obras: 'lce', planejamento: 'lce', rdos: 'lce', requisicoes_material: 'lce', frequencia: 'l', funcionarios: 'l', produtos: 'l', depositos: 'l', estoque_movimentos: 'l', orcamentos: 'l' },
     'RH / Departamento pessoal': { funcionarios: 'lce', frequencia: 'lce', ausencias: 'lce', epis: 'lce', feriados: 'lce', obras: 'l', rdos: 'l' },
     'Comercial / Vendedor': { clientes: 'lce', vendedores: 'l', orcamentos: 'lce', obras: 'l', contas_receber: 'l' },

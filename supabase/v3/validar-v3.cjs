@@ -62,6 +62,17 @@ async function banco({ v3 = true } = {}) {
   const cc = id(); await salvar(MASTER, 'centros_custo', cc, 0, { codigo: 'ADM', nome: 'Adm', tipo: 'administrativo' });
   check((await salvar(MASTER, 'despesas', id(), 0, { descricao: 'Teste', valor_centavos: 100, competencia: '2026-11-10', classificacao: 'administrativa', centro_custo_id: cc })).revisao === 1, 'v2 (despesas) continua funcionando');
 
+  console.log('Trilha de auditoria');
+  const dc = id(); await salvar(MASTER, 'despesas', dc, 0, { descricao: 'Sigilo', valor_centavos: 500, competencia: '2026-11-10', classificacao: 'administrativa', centro_custo_id: cc, confidencial: true });
+  const dn = id(); await salvar(MASTER, 'despesas', dn, 0, { descricao: 'Comum', valor_centavos: 700, competencia: '2026-11-10', classificacao: 'administrativa', centro_custo_id: cc });
+  await como(MASTER, 'SELECT public.martins_producao_despesa_estado($1,$2,$3,$4,$5,$6) AS x', [E, dn, 1, 'aprovado', 'Conferido', id()]);
+  const aud = (u, r) => como(u, 'SELECT public.martins_producao_auditoria($1,$2,$3) AS x', [E, 'despesas', r]).then(x => x.x ?? x);
+  const trilha = await aud(MASTER, dn);
+  check(trilha.length === 2 && trilha[0].estado_depois === 'aprovado' && trilha[0].motivo === 'Conferido' && trilha[0].autor === 'Master' && trilha[1].acao === 'criar', 'trilha mostra criação e aprovação com autor, estado e motivo');
+  await db.exec(`INSERT INTO martins_producao_v1.permissoes VALUES ('${OPER}','${E}','despesas',true,false,false)`);
+  check((await aud(OPER, dc)).erro === '42501', 'despesa confidencial: trilha negada a quem não é Master');
+  check((await aud(OPER, dn)).erro === '42501', 'despesa alheia: trilha negada ao operacional que não a criou');
+
   console.log('Reversão');
   const limpo = await banco();
   try { await limpo.exec(sql('supabase/v3/reverter_v3.sql')); check(true, 'sem dados v3, a reversão funciona'); } catch (e) { check(false, 'reversão sem dados: ' + e.message); }

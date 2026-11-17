@@ -56,6 +56,7 @@ REVERTER.write_text("-- GERADO por supabase/v3/gerar_migracao.py. Reverte a v3 (
                     "  OR EXISTS(SELECT 1 FROM martins_producao_v1.permissoes WHERE modulo IN ('" + "','".join(V3_NOVOS) + "')) THEN\n"
                     "  RAISE EXCEPTION 'Há registros ou permissões de módulos v3; a reversão apagaria dados e foi bloqueada';\n END IF;\nEND $$;\n"
                     + "\n\n".join(originais.values())
+                    + "\n\nDROP FUNCTION public.martins_producao_auditoria(uuid,text,uuid,integer);"
                     + "\n\nDROP FUNCTION martins_producao_v1.preparar_v3(uuid,text,uuid,bigint,jsonb,martins_producao_v1.registros);\n"
                     "DROP INDEX martins_producao_v1.feriados_data_empresa, martins_producao_v1.epis_codigo_empresa;\n"
                     "ALTER TABLE martins_producao_v1.registros DROP CONSTRAINT registros_modulo_check;\n"

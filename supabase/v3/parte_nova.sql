@@ -57,3 +57,21 @@ BEGIN
  RETURN d;
 END $$;
 REVOKE ALL ON FUNCTION martins_producao_v1.preparar_v3(uuid,text,uuid,bigint,jsonb,martins_producao_v1.registros) FROM PUBLIC,anon,authenticated;
+
+-- Trilha de auditoria de um registro: quem fez, quando, o quê (e o estado/motivo das despesas).
+-- Mesmo escopo de leitura do registro: despesa confidencial só para Master.
+CREATE FUNCTION public.martins_producao_auditoria(e uuid, m text, r uuid, limite integer DEFAULT 50) RETURNS jsonb
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path='' AS $$
+BEGIN
+ IF martins_producao_v1.pode(e,m,'ler') IS NOT TRUE THEN RAISE EXCEPTION 'Acesso negado' USING ERRCODE='42501'; END IF;
+ IF r IS NULL OR limite IS NULL OR limite<1 OR limite>200 THEN RAISE EXCEPTION 'Consulta inválida' USING ERRCODE='22023'; END IF;
+ IF m='despesas' AND NOT public.martins_online_master(e) AND NOT EXISTS(SELECT 1 FROM martins_producao_v1.registros x
+    WHERE x.empresa_id=e AND x.modulo=m AND x.id=r AND NOT COALESCE((x.dados->>'confidencial')::boolean,false)
+    AND (x.criado_por=auth.uid() OR public.martins_online_leitor(e))) THEN RAISE EXCEPTION 'Acesso negado' USING ERRCODE='42501'; END IF;
+ RETURN COALESCE((SELECT jsonb_agg(jsonb_build_object('evento',t.evento_id,'em',t.em,'acao',t.acao,'autor',COALESCE(p.nome,'(usuário)'),
+   'estado_antes',t.antes->'dados'->>'estado','estado_depois',t.depois->'dados'->>'estado','motivo',t.depois->>'motivo') ORDER BY t.evento_id DESC)
+   FROM (SELECT * FROM martins_producao_v1.auditoria a WHERE a.empresa_id=e AND a.modulo=m AND a.registro_id=r ORDER BY a.evento_id DESC LIMIT limite) t
+   LEFT JOIN public.martins_perfis p ON p.usuario_id=t.usuario_id),'[]'::jsonb);
+END $$;
+REVOKE ALL ON FUNCTION public.martins_producao_auditoria(uuid,text,uuid,integer) FROM PUBLIC,anon;
+GRANT EXECUTE ON FUNCTION public.martins_producao_auditoria(uuid,text,uuid,integer) TO authenticated;

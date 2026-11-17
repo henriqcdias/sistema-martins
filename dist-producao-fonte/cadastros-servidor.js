@@ -96,7 +96,9 @@
     const limpo = String(texto || '').trim().replace(/[R$\s]/g, '');
     if (!limpo) return null;
     const normal = limpo.includes(',') ? limpo.replace(/\./g, '').replace(',', '.') : limpo;
-    if (!/^\d+(\.\d{1,2})?$/.test(normal)) throw Error('Valor inválido. Use o formato 1.234,56.');
+    if (/^-/.test(normal)) throw Error('O valor não pode ser negativo. Informe um valor maior que zero.');
+    if (!/^\d+(\.\d{1,2})?$/.test(normal)) throw Error('Valor inválido. Use números com até 2 casas decimais, por exemplo 1.234,56.');
+    if (Number(normal) <= 0) throw Error('O valor precisa ser maior que zero.');
     return Math.round(Number(normal) * 100);
   };
   const rotuloRef = (cat, id) => {
@@ -190,12 +192,12 @@
   }
   function lerFormulario(form, def) {
     const d = {};
-    for (const [nome, , tipo, opc = {}] of def.campos) {
+    for (const [nome, rotulo, tipo, opc = {}] of def.campos) {
       const input = form.querySelector('#cs-' + nome);
       if (!input) continue;
       if (tipo === 'sim') { d[nome] = input.checked; continue; }
       const v = input.value.trim();
-      if (!v && opc.obrigatorio) throw Error('Preencha: ' + nome.replace(/_/g, ' '));
+      if (!v && opc.obrigatorio) throw Error('Preencha o campo "' + rotulo.replace(/ \(.+\)$/, '') + '".');
       // Campo opcional vazio vai como null: na edição, isso limpa o valor anterior.
       if (!v) { d[nome] = null; continue; }
       if (tipo === 'dinheiro') { d[nome] = centavos(v); continue; }
@@ -253,6 +255,22 @@
     if (coluna === 'nome' && !v && d.funcionario_id) return rotuloRef('funcionarios', d.funcionario_id);
     return v ?? '';
   }
+  async function mostrarHistorico(reg) {
+    const corpo = painel.querySelector('[data-cs=corpo]');
+    const voltar = el('button', { type: 'button', classe: 'cs-secundario', texto: '← Voltar à lista', onclick: () => desenhar() });
+    corpo.replaceChildren(el('h3', { texto: 'Histórico de alterações' }), el('p', { texto: 'Consultando o servidor…' }), voltar);
+    try {
+      const eventos = await W.MartinsProducaoRpc.auditoria({ e: empresa, m: aba, r: reg.id, limite: 100 });
+      const ACOES = { criar: 'Criado', editar: 'Alterado' };
+      const quando = v => new Date(v).toLocaleString('pt-BR');
+      const linhas = eventos.map(ev => el('tr', {}, el('td', { texto: quando(ev.em) }), el('td', { texto: ev.autor }),
+        el('td', { texto: ev.estado_antes && ev.estado_depois && ev.estado_antes !== ev.estado_depois ? 'Estado: ' + (ESTADOS[ev.estado_antes] || ev.estado_antes) + ' → ' + (ESTADOS[ev.estado_depois] || ev.estado_depois) : (ACOES[ev.acao] || ev.acao) }),
+        el('td', { texto: ev.motivo || '' })));
+      corpo.replaceChildren(el('h3', { texto: 'Histórico de alterações' }),
+        eventos.length ? el('div', { classe: 'cs-rolagem' }, el('table', { classe: 'cs-tabela' }, el('thead', {}, el('tr', {}, ['Quando', 'Quem', 'O que', 'Motivo'].map(t => el('th', { texto: t })))), el('tbody', {}, linhas)))
+          : el('p', { classe: 'cs-vazio', texto: 'Nenhum evento registrado para este item.' }), voltar);
+    } catch (e) { corpo.replaceChildren(el('h3', { texto: 'Histórico de alterações' }), el('p', { classe: 'cs-erro', texto: traduzir(e) }), voltar); }
+  }
   function acoesDespesa(reg) {
     const atual = reg.dados.estado || 'pendente_conferencia';
     const caixa = el('div', { classe: 'cs-estado', onclick: ev => ev.stopPropagation(), onkeydown: ev => ev.stopPropagation() });
@@ -295,19 +313,25 @@
     const def = MODULOS[aba];
     const corpo = painel.querySelector('[data-cs=corpo]');
     const busca = el('input', { type: 'search', placeholder: 'Pesquisar…', 'aria-label': 'Pesquisar ' + def.titulo });
-    const topo = el('div', { classe: 'cs-acoes' }, busca,
+    const contagem = el('span', { 'aria-live': 'polite', style: 'color:#64748b;font-size:13px' });
+    const topo = el('div', { classe: 'cs-acoes' }, busca, contagem,
       pode(aba, 'criar') ? el('button', { type: 'button', classe: 'cs-primario', texto: '+ Novo', onclick: () => abrirFormulario(null) }) : null,
       aba === 'despesas' && W.MartinsPainelServidor ? el('button', { type: 'button', classe: 'cs-secundario', texto: 'Exportar CSV', onclick: () => W.MartinsPainelServidor.exportarDespesasCsv().catch(e => mensagem(traduzir(e), true)) }) : null);
     const tabela = el('table', { classe: 'cs-tabela' });
-    tabela.append(el('thead', {}, el('tr', {}, def.colunas.map(c => el('th', { texto: (def.campos.find(x => x[0] === c)?.[1] || c).replace(/ \(.+\)$/, '') })), aba === 'despesas' ? null : el('th', { texto: 'Situação' }))));
+    tabela.append(el('thead', {}, el('tr', {}, def.colunas.map(c => el('th', { texto: (def.campos.find(x => x[0] === c)?.[1] || c).replace(/ \(.+\)$/, '') })), aba === 'despesas' ? null : el('th', { texto: 'Situação' }), el('th', { texto: 'Histórico' }))));
     const tbody = el('tbody');
     const linhas = [...registros.values()].sort((a, b) => String(b.dados.competencia || '').localeCompare(String(a.dados.competencia || '')) || String(a.dados.nome || a.dados.descricao || '').localeCompare(String(b.dados.nome || b.dados.descricao || '')));
     const render = () => {
       const q = busca.value.trim().toLowerCase();
-      tbody.replaceChildren(...linhas.filter(r => !q || JSON.stringify(r.dados).toLowerCase().includes(q)).map(r => {
+      // A busca cobre o que a tabela mostra (ex.: código do centro de custo), além dos dados brutos.
+      const palheiro = r => (JSON.stringify(r.dados) + ' ' + def.colunas.map(c => formatar(aba, c, r.dados)).join(' ')).toLowerCase();
+      const achados = linhas.filter(r => !q || palheiro(r).includes(q));
+      contagem.textContent = q ? achados.length + ' de ' + linhas.length + ' registro(s)' : linhas.length + ' registro(s)';
+      tbody.replaceChildren(...achados.map(r => {
         const tr = el('tr', { tabindex: 0, onclick: () => pode(aba, 'editar') && abrirFormulario(r), onkeydown: ev => ev.key === 'Enter' && pode(aba, 'editar') && abrirFormulario(r) },
           def.colunas.map(c => el('td', { 'data-rotulo': (def.campos.find(x => x[0] === c)?.[1] || c), texto: c === 'estado' ? null : String(formatar(aba, c, r.dados)) }, c === 'estado' ? acoesDespesa(r) : null)),
-          aba === 'despesas' ? null : el('td', { 'data-rotulo': 'Situação', texto: r.dados.ativo === false ? 'Inativo' : 'Ativo' }));
+          aba === 'despesas' ? null : el('td', { 'data-rotulo': 'Situação', texto: r.dados.ativo === false ? 'Inativo' : 'Ativo' }),
+          el('td', { 'data-rotulo': 'Histórico', onclick: ev => ev.stopPropagation() }, el('button', { type: 'button', classe: 'cs-secundario', texto: 'Histórico', 'aria-label': 'Ver histórico de alterações', onclick: ev => { ev.stopPropagation(); mostrarHistorico(r); } })));
         if (r.dados.ativo === false) tr.classList.add('cs-inativo');
         return tr;
       }));

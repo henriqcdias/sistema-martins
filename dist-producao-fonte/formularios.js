@@ -147,6 +147,13 @@
   if(empresa)await carregar();else {D.body.dataset.empresaProducao='ativa';atualizarVisoes();mensagem('Selecione sua empresa para consultar os dados.');}
  };
  W.MartinsProducaoOnEmpresa=()=>{};
+ // O bundle chama estas funções (ficha individual do funcionário); só existiam na árvore antiga de QA.
+ if(!W.consultarVinculoRhWork)W.consultarVinculoRhWork=async(emp,id)=>{
+  const r=dados.funcionarios.get(id)||[...dados.funcionarios.values()].find(x=>x.dados.nome===id);
+  if(!r||(emp&&r.empresa_id!==emp))throw Error('Funcionário não encontrado nesta empresa. Use Atualizar dados e tente de novo.');
+  return {id:r.id,empresa_id:r.empresa_id,dados:clone(r.dados)};
+ };
+ if(!W.rotuloEmpresaQaWork)W.rotuloEmpresaQaWork=emp=>contexto()?.vinculos.find(v=>v.empresa_id===emp)?.nomeEmpresa||'';
  async function enviar(modulo,conteudo,id=null,rev=null,{somente=null}={}){
   const e=requireEmpresa();if(!api)throw Error('Entre com sua sessão v5.');const antigo=id?registro(modulo,id):null;
   if(id&&!antigo)throw Error('Registro não encontrado na empresa ativa. Recarregue a consulta.');

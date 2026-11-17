@@ -88,7 +88,8 @@
       '/rest/v1/rpc/martins_producao_contexto',
       '/rest/v1/rpc/martins_producao_catalogos',
       '/rest/v1/rpc/martins_producao_consultar',
-      '/rest/v1/rpc/martins_producao_despesas_totais'
+      '/rest/v1/rpc/martins_producao_despesas_totais',
+      '/rest/v1/rpc/martins_producao_auditoria'
     ].includes(path);
     // Gravação só quando o build a habilita explicitamente (homologação); a produção permanece somente leitura.
     const escrita = gravacaoHabilitadaWork() && schema === 'public' && method === 'POST' && [
@@ -422,6 +423,7 @@
     salvar:args=>rpcProducao('martins_producao_salvar',args),
     catalogos:e=>rpcProducao('martins_producao_catalogos',{e}),
     lote:args=>rpcProducao('martins_producao_salvar_lote',args),
+    auditoria:args=>rpcProducao('martins_producao_auditoria',args),
     despesaEstado:args=>rpcProducao('martins_producao_despesa_estado',args),
     despesasTotais:args=>rpcProducao('martins_producao_despesas_totais',args),
     comRascunho:async(e,executar)=>{

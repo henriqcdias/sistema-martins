@@ -388,6 +388,37 @@ async function novo(page, campos) {
     await pm2.waitForTimeout(300);
     check(await pm2.evaluate(() => document.getElementById('edit-colab-salario').value === '3100.5' || document.getElementById('edit-colab-salario').value === '3100.50') &&
       await pm2.$eval('#edit-colab-aso-venc', n => n.value === '2027-01-31'), 'ao reabrir, os dados de RH/SST voltam do servidor');
+
+    console.log('Rodada 4: ficha, histórico, busca e mensagens');
+    await pm2.evaluate(() => { document.getElementById('modal-editar-colaborador').classList.add('hidden'); });
+    await pm2.evaluate(id => window.abrirFichaColaborador(id), criados[0].id);
+    await pm2.waitForSelector('#modal-ficha-individual-funcionario-estab:not(.hidden)', { timeout: 10000 });
+    const ficha = await pm2.evaluate(() => document.getElementById('modal-ficha-individual-funcionario-estab').innerText);
+    check(/Beltrano SST/.test(ficha) && /Eletricista/.test(ficha), 'H01: a ficha individual abre com os dados do funcionário do servidor');
+    check(/ASO:\s*31\/01\/2027/.test(ficha) && /NR-10[^\n]*15\/12\/2026/.test(ficha), 'H01: ASO e NR-10 mostrados são os informados no cadastro');
+    check(!/Bota 41|Unif\. G|Capacete, Luva|2027-04-15|Regular/.test(ficha) && /nenhuma entrega registrada/.test(ficha), 'H01: sem ASO, NR ou EPI inventados na ficha');
+    await pm2.evaluate(() => { const f = document.getElementById('modal-ficha-individual-funcionario-estab'); f.classList.add('hidden'); f.style.display = 'none'; });
+
+    await pm2.evaluate(() => window.MartinsCadastrosServidor.abrir('despesas'));
+    await pm2.waitForFunction(() => /Despesas:/.test(document.querySelector('[data-cs=status]')?.textContent || ''));
+    await pm2.fill('#cs-painel input[type=search]', 'ADM-01');
+    check(await pm2.$$eval('#cs-painel tbody tr', t => t.length > 0 && !/Nada encontrado/.test(t[0].textContent)), '48: a busca encontra pelo código do centro de custo exibido na tabela');
+    check(/\d+ de \d+ registro/.test(await pm2.$eval('#cs-painel .cs-acoes span', n => n.textContent)), '48: o contador mostra resultados sobre o total');
+    await pm2.fill('#cs-painel input[type=search]', '');
+    await pm2.click('#cs-painel tbody tr:has-text("Honorários") button:text-is("Histórico")');
+    await pm2.waitForSelector('#cs-painel h3:text-is("Histórico de alterações")');
+    await pm2.waitForSelector('#cs-painel tbody tr');
+    const hist = await pm2.$eval('#cs-painel tbody', n => n.innerText);
+    check(/Master Teste/.test(hist) && /Criado|Estado:/.test(hist), '60: o histórico mostra quem criou/alterou, quando e o estado');
+    await pm2.click('#cs-painel button:text-is("← Voltar à lista")');
+    await pm2.click('#cs-painel button:text-is("+ Novo")');
+    await pm2.click('#cs-painel button:text-is("Salvar no servidor")');
+    await pm2.waitForFunction(() => /Preencha o campo "Descrição"/.test(document.querySelector('.cs-erro')?.textContent || ''));
+    check(true, '97: campo obrigatório vazio usa o rótulo da tela ("Descrição"), não o nome interno');
+    await pm2.fill('#cs-descricao', 'Teste'); await pm2.fill('#cs-valor_centavos', '-5,00'); await pm2.$eval('#cs-competencia', n => { n.value = '2026-11-10'; }); await pm2.selectOption('#cs-classificacao', 'administrativa');
+    await pm2.click('#cs-painel button:text-is("Salvar no servidor")');
+    await pm2.waitForFunction(() => /não pode ser negativo/.test(document.querySelector('.cs-erro')?.textContent || ''));
+    check(true, '97: valor negativo explica a regra (maior que zero)');
   } finally {
     await browser.close();
     fs.rmSync(tmp, { recursive: true, force: true });

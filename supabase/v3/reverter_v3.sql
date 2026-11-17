@@ -151,6 +151,8 @@ BEGIN
  'vendedores',CASE WHEN martins_producao_v1.pode(e,'vendedores','ler') OR martins_producao_v1.pode(e,'orcamentos','ler') THEN COALESCE((SELECT jsonb_agg(jsonb_build_object('id',x.id,'nome',COALESCE(x.dados->>'nome',f.dados->>'nome'),'funcionario_id',x.dados->>'funcionario_id') ORDER BY x.id) FROM martins_producao_v1.registros x LEFT JOIN martins_producao_v1.registros f ON f.empresa_id=x.empresa_id AND f.modulo='funcionarios' AND f.id::text=x.dados->>'funcionario_id' WHERE x.empresa_id=e AND x.modulo='vendedores' AND COALESCE((x.dados->>'ativo')::boolean,true)),'[]'::jsonb) ELSE '[]'::jsonb END);
 END $$;
 
+DROP FUNCTION public.martins_producao_auditoria(uuid,text,uuid,integer);
+
 DROP FUNCTION martins_producao_v1.preparar_v3(uuid,text,uuid,bigint,jsonb,martins_producao_v1.registros);
 DROP INDEX martins_producao_v1.feriados_data_empresa, martins_producao_v1.epis_codigo_empresa;
 ALTER TABLE martins_producao_v1.registros DROP CONSTRAINT registros_modulo_check;

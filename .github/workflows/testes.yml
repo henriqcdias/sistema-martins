@@ -40,3 +40,7 @@ jobs:
         run: node supabase/v9/validar-v9.cjs .
       - name: Contratos v10 (contas a receber)
         run: node supabase/v10/validar-v10.cjs .
+      - name: Contratos v11 (devolução ao fornecedor)
+        run: node supabase/v11/validar-v11.cjs .
+      - name: Isolamento entre empresas
+        run: node supabase/isolamento/validar-isolamento.cjs .

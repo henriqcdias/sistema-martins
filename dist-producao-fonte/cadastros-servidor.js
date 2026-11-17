@@ -389,7 +389,7 @@
   }
   // ---------- Compras (v5): pedido -> aprovação (Master) -> recebimento atômico ----------
   const SIT_PED = { rascunho: 'Rascunho', aprovado: 'Aprovado', recebido_parcial: 'Recebido em parte', recebido: 'Recebido', cancelado: 'Cancelado' };
-  let pendenteCompras = null;
+  let pendenteCompras = null, pendenteDevolucao = null;
   async function enviarPedido(id, rev, d) {
     const chave = JSON.stringify([id, rev, d]); if (!pendenteCompras || pendenteCompras.chave !== chave) {
       const cmd = api.prepare({ empresa, modulo: 'pedidos_compra', id: id || crypto.randomUUID(), revisao: rev, dados: d }); pendenteCompras = { chave, op: cmd.operacao };
@@ -456,12 +456,40 @@
     });
     secoes.push(el('section', { 'data-cp': 'pedidos' }, el('h3', { texto: 'Pedidos de compra' }), el('div', { classe: 'cs-rolagem' }, el('table', { classe: 'cs-tabela' },
       el('thead', {}, el('tr', {}, ['Nº', 'Fornecedor', 'Recebido/Pedido', 'Total', 'Situação e ações'].map(t => el('th', { texto: t })))), el('tbody', {}, rows.length ? rows : [el('tr', {}, el('td', { colspan: 5, classe: 'cs-vazio', texto: 'Nenhum pedido.' }))])))));
+    const podeDevolver = pode('compras', 'editar') && pode('estoque', 'criar');
+    const devolvidoDe = r => (r.dados.itens || []).reduce((s, i) => s + Number(i.devolvido_centavos || 0), 0);
+    const restaDevolver = r => (r.dados.itens || []).some(i => Number(i.qtd_milli) > Number(i.devolvido_milli || 0));
     const rr = recebs.slice().sort((a, b) => String(b.criado_em).localeCompare(String(a.criado_em))).map(r => el('tr', {}, el('td', { 'data-rotulo': 'Data', texto: String(r.dados.data).split('-').reverse().join('/') }),
-      el('td', { 'data-rotulo': 'Nota fiscal', texto: r.dados.numero_nf || (r.dados.chave_acesso ? 'chave …' + r.dados.chave_acesso.slice(-8) : '') }), el('td', { 'data-rotulo': 'Fornecedor', texto: nomeF(r.dados.fornecedor_id) }), el('td', { 'data-rotulo': 'Total', texto: reais(r.dados.total_centavos) })));
-    secoes.push(el('section', {}, el('h3', { texto: 'Recebimentos' }), el('div', { classe: 'cs-rolagem' }, el('table', { classe: 'cs-tabela' }, el('thead', {}, el('tr', {}, ['Data', 'Nota fiscal', 'Fornecedor', 'Total'].map(t => el('th', { texto: t })))),
-      el('tbody', {}, rr.length ? rr : [el('tr', {}, el('td', { colspan: 4, classe: 'cs-vazio', texto: 'Nenhum recebimento.' }))])))));
+      el('td', { 'data-rotulo': 'Nota fiscal', texto: r.dados.numero_nf || (r.dados.chave_acesso ? 'chave …' + r.dados.chave_acesso.slice(-8) : '') }), el('td', { 'data-rotulo': 'Fornecedor', texto: nomeF(r.dados.fornecedor_id) }), el('td', { 'data-rotulo': 'Total', texto: reais(r.dados.total_centavos) }),
+      el('td', { 'data-rotulo': 'Devolvido', texto: devolvidoDe(r) ? reais(devolvidoDe(r)) + (Number(r.dados.credito_pendente_centavos) ? ' · crédito pendente ' + reais(r.dados.credito_pendente_centavos) : '') : '—' }),
+      el('td', { 'data-rotulo': 'Ações' }, podeDevolver && restaDevolver(r) ? el('button', { type: 'button', classe: 'cs-secundario', texto: 'Devolver', onclick: () => formDevolver(r) }) : null)));
+    secoes.push(el('section', {}, el('h3', { texto: 'Recebimentos' }), el('div', { classe: 'cs-rolagem' }, el('table', { classe: 'cs-tabela' }, el('thead', {}, el('tr', {}, ['Data', 'Nota fiscal', 'Fornecedor', 'Total', 'Devolvido', 'Ações'].map(t => el('th', { texto: t })))),
+      el('tbody', {}, rr.length ? rr : [el('tr', {}, el('td', { colspan: 6, classe: 'cs-vazio', texto: 'Nenhum recebimento.' }))])))));
     corpo.replaceChildren(...secoes);
     mensagem('Compras: ' + pedidos.length + ' pedido(s) e ' + recebs.length + ' recebimento(s) da empresa ativa.');
+    function formDevolver(r) {
+      const campos = r.dados.itens.filter(i => Number(i.qtd_milli) > Number(i.devolvido_milli || 0)).map(i => ({ i, input: el('input', { type: 'text', inputmode: 'decimal', placeholder: '0', 'aria-label': 'Quantidade devolvida de ' + nomeP(i.produto_id) }) }));
+      const motivo = el('input', { id: 'dv-motivo', type: 'text', placeholder: 'Motivo da devolução (obrigatório)', maxlength: '300' });
+      const erro = el('p', { classe: 'cs-erro', role: 'alert' });
+      const ok = el('button', { type: 'button', classe: 'cs-perigo', texto: 'Confirmar devolução', disabled: !gravacao(), onclick: async () => {
+        ok.disabled = true; erro.textContent = '';
+        try {
+          if (!motivo.value.trim()) throw Error('Informe o motivo da devolução.');
+          const itens = campos.filter(c => c.input.value.trim() && Number(String(c.input.value).replace(',', '.')) > 0).map(c => ({ produto_id: c.i.produto_id, qtd_milli: milli(c.input.value) }));
+          if (!itens.length) throw Error('Informe a quantidade devolvida de ao menos um item.');
+          const args = { e: empresa, recebimento: r.id, itens, motivo: motivo.value.trim() };
+          const k = JSON.stringify(args); if (!pendenteDevolucao || pendenteDevolucao.chave !== k) pendenteDevolucao = { chave: k, op: crypto.randomUUID() };
+          const res = await W.MartinsProducaoRpc.comprasDevolver({ ...args, op: pendenteDevolucao.op }); pendenteDevolucao = null;
+          const aviso = { reduzida: 'A obrigação (ainda pendente de conferência) foi reduzida.', cancelada: 'Tudo foi devolvido: a obrigação pendente foi cancelada.',
+            credito_pendente: 'A obrigação já estava aprovada/paga e não foi alterada: ficou um crédito pendente de ' + reais(res.credito_pendente_centavos) + ' com o fornecedor, para acertar no financeiro.', sem_alteracao: '' }[res.despesa] || '';
+          mensagem('Devolução registrada: estoque baixado, ' + reais(res.valor_devolvido_centavos) + ' devolvidos. ' + aviso); await carregarCompras();
+        } catch (e) { erro.textContent = traduzir(e); ok.disabled = !gravacao(); }
+      } });
+      corpo.replaceChildren(el('section', { classe: 'cs-form' }, el('h3', { texto: 'Devolver ao fornecedor · ' + (r.dados.numero_nf ? 'NF ' + r.dados.numero_nf : 'recebimento') + ' · ' + nomeF(r.dados.fornecedor_id) }),
+        ...campos.map(c => el('div', { classe: 'cs-acoes' }, el('span', { texto: nomeP(c.i.produto_id) + ' (pode devolver até ' + qtd(c.i.qtd_milli - Number(c.i.devolvido_milli || 0)) + ')' }), c.input)), motivo,
+        el('div', { classe: 'cs-acoes' }, ok, el('button', { type: 'button', classe: 'cs-secundario', texto: 'Cancelar', onclick: () => carregarCompras() })), erro,
+        el('p', { classe: 'cs-aviso', texto: 'Ao confirmar: o material sai do depósito onde foi recebido. Se a obrigação gerada pela compra ainda estiver pendente de conferência, ela é reduzida (ou cancelada); se já foi aprovada ou paga, nada é alterado e fica um crédito pendente com o fornecedor. O pedido não reabre.' })));
+    }
     function formReceber(p) {
       const dep = el('select', { id: 'rc-deposito' }); dep.add(new Option('Depósito de destino', '')); for (const x of depositos.filter(z => z.dados.ativo !== false)) dep.add(new Option(x.dados.nome, x.id));
       const campos = p.dados.itens.filter(i => i.recebido_milli < i.qtd_milli).map(i => ({ i, input: el('input', { type: 'text', inputmode: 'decimal', value: (((i.qtd_milli - i.recebido_milli)) / 1000).toString().replace('.', ','), 'aria-label': 'Quantidade recebida de ' + nomeP(i.produto_id) }) }));

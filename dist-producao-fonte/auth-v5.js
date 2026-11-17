@@ -112,7 +112,8 @@
       '/rest/v1/rpc/martins_producao_usuario_vincular',
       '/rest/v1/rpc/martins_producao_receber_baixar',
       '/rest/v1/rpc/martins_producao_receber_estado',
-      '/rest/v1/rpc/martins_producao_receber_estornar'
+      '/rest/v1/rpc/martins_producao_receber_estornar',
+      '/rest/v1/rpc/martins_producao_compras_devolver'
     ].includes(path);
     const sessaoPermitida = (method === 'POST' && [
       '/auth/v1/token?grant_type=password',
@@ -447,6 +448,7 @@
     comprasReceber:args=>rpcProducao('martins_producao_compras_receber',args),
     reqEstado:args=>rpcProducao('martins_producao_req_estado',args),
     reqEntregar:args=>rpcProducao('martins_producao_req_entregar',args),
+    comprasDevolver:args=>rpcProducao('martins_producao_compras_devolver',args),
     receberTotais:e=>rpcProducao('martins_producao_receber_totais',{e}),
     receberBaixar:args=>rpcProducao('martins_producao_receber_baixar',args),
     receberEstado:args=>rpcProducao('martins_producao_receber_estado',args),

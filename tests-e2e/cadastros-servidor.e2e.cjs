@@ -29,7 +29,7 @@ async function banco() {
     CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$ SELECT nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;`);
   await db.exec(sql('supabase/producao/base/estrutura_anterior_as_migracoes.sql'));
   await db.exec(`INSERT INTO public.martins_empresas(id, razao_social) VALUES ('${E}', 'Construtora Martins - cadastro inicial');`);
-  for (const d of ['supabase/producao/migrations', 'supabase/v2/migrations', 'supabase/v3/migrations', 'supabase/v4/migrations', 'supabase/v5/migrations', 'supabase/v6/migrations', 'supabase/v7/migrations', 'supabase/v8/migrations', 'supabase/v9/migrations', 'supabase/v10/migrations'])
+  for (const d of ['supabase/producao/migrations', 'supabase/v2/migrations', 'supabase/v3/migrations', 'supabase/v4/migrations', 'supabase/v5/migrations', 'supabase/v6/migrations', 'supabase/v7/migrations', 'supabase/v8/migrations', 'supabase/v9/migrations', 'supabase/v10/migrations', 'supabase/v11/migrations'])
     for (const f of fs.readdirSync(path.join(raiz, d)).sort()) await db.exec(sql(d + '/' + f));
   const [M, L] = Object.values(USUARIOS);
   await db.exec(`INSERT INTO auth.users VALUES ('${M}','master@teste.invalid'),('${L}','lancador@teste.invalid');
@@ -39,7 +39,7 @@ async function banco() {
   return db;
 }
 
-const TIPOS = { e: 'uuid', r: 'uuid', apos: 'uuid', op: 'uuid', v: 'bigint', limite: 'integer', d: 'jsonb', itens: 'jsonb', de: 'date', ate: 'date', m: 'text', estado: 'text', motivo: 'text', tipo: 'text', produto: 'uuid', origem: 'uuid', requisicao: 'uuid', usuario: 'uuid', ativo: 'boolean', email: 'text', nome: 'text', conta: 'uuid', valor: 'bigint', data: 'date', conta_bancaria: 'uuid', obs: 'text', baixa: 'uuid', destino: 'uuid', qtd: 'bigint', ref: 'uuid', pedido: 'uuid', deposito: 'uuid', documento: 'jsonb', obra: 'uuid', rdo: 'uuid', consumo: 'uuid' };
+const TIPOS = { e: 'uuid', r: 'uuid', apos: 'uuid', op: 'uuid', v: 'bigint', limite: 'integer', d: 'jsonb', itens: 'jsonb', de: 'date', ate: 'date', m: 'text', estado: 'text', motivo: 'text', tipo: 'text', produto: 'uuid', origem: 'uuid', requisicao: 'uuid', recebimento: 'uuid', usuario: 'uuid', ativo: 'boolean', email: 'text', nome: 'text', conta: 'uuid', valor: 'bigint', data: 'date', conta_bancaria: 'uuid', obs: 'text', baixa: 'uuid', destino: 'uuid', qtd: 'bigint', ref: 'uuid', pedido: 'uuid', deposito: 'uuid', documento: 'jsonb', obra: 'uuid', rdo: 'uuid', consumo: 'uuid' };
 async function supabase(db, route) {
   const req = route.request(), url = new URL(req.url());
   const json = (status, body) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
@@ -478,6 +478,23 @@ async function novo(page, campos) {
     await pm2.waitForSelector('[data-cp=pedidos] tbody tr:has-text("Recebido"):not(:has-text("em parte"))');
     const rec2 = (await db.query(`SELECT dados FROM martins_producao_v1.registros WHERE modulo='recebimentos_compra' AND dados->>'numero_nf'='5502'`)).rows;
     check(rec2.length === 1 && rec2[0].dados.chave_acesso === CHAVE, 'recebimento gravado no servidor com o número e a chave vindos do XML; pedido concluído');
+    // devolução ao fornecedor (v11)
+    const saldoB = async () => Number((await db.query(`SELECT martins_producao_v1.saldo($1,$2,$3) s`, [E, PB, DA])).rows[0].s);
+    const despNf = () => db.query(`SELECT dados FROM martins_producao_v1.registros WHERE modulo='despesas' AND dados->>'documento_numero'='5502'`).then(r => r.rows[0].dados);
+    const antesDev = await saldoB(); const valorAntes = (await despNf()).valor_centavos;
+    await pm2.click('#cs-painel tr:has-text("5502") button:text-is("Devolver")');
+    await pm2.waitForSelector('#dv-motivo');
+    await pm2.click('#cs-painel button:text-is("Confirmar devolução")');
+    await pm2.waitForFunction(() => /Informe o motivo da devolução/.test(document.querySelector('#cs-painel .cs-erro')?.textContent || ''));
+    await pm2.fill('#dv-motivo', 'Material com defeito'); await pm2.fill('#cs-painel input[aria-label^="Quantidade devolvida de"]', '99');
+    await pm2.click('#cs-painel button:text-is("Confirmar devolução")');
+    await pm2.waitForFunction(() => [...document.querySelectorAll('#cs-painel .cs-erro')].some(n => /Devolução maior que o recebido/.test(n.textContent)));
+    check(await saldoB() === antesDev, 'devolver mais que o recebido é recusado com mensagem clara e nada é baixado');
+    await pm2.fill('#cs-painel input[aria-label^="Quantidade devolvida de"]', '1'); await pm2.click('#cs-painel button:text-is("Confirmar devolução")');
+    await pm2.waitForSelector('#cs-painel tr:has-text("5502"):has-text("20,00")');
+    const dv = (await db.query(`SELECT dados FROM martins_producao_v1.registros WHERE modulo='recebimentos_compra' AND dados->>'numero_nf'='5502'`)).rows[0].dados;
+    check(await saldoB() === antesDev - 1000 && dv.itens[0].devolvido_milli === 1000 && dv.devolucoes[0].motivo === 'Material com defeito', 'devolução de 1 un: estoque baixado e devolução registrada com motivo');
+    check((await despNf()).valor_centavos === valorAntes - 2000 && (await despNf()).estado === 'pendente_conferencia', 'a obrigação pendente caiu em R$ 20,00 (1 un × R$ 20,00)');
     await pm2.evaluate(() => window.MartinsCadastrosServidor.fechar());
     await pm2.evaluate(() => { const f = document.getElementById('form-novo-pedido-compra'); const m = f.closest('[id^=modal-]'); if (m) { m.classList.remove('hidden'); m.style.display = 'flex'; } f.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true })); });
     await pm2.waitForSelector('#cp-fornecedor', { timeout: 10000 });

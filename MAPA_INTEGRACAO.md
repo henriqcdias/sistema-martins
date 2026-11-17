@@ -170,3 +170,33 @@ Ainda não faz: casar item por descrição, criar produto ou fornecedor a partir
 - **Também corrigido:** a data "hoje" sugerida nas telas usava UTC e, à noite no Brasil, virava "amanhã" (o servidor recusaria como data futura). Agora usa a data local.
 - **A v10 ampliou a lista de módulos de `martins_producao_permissoes_definir` (v9).** O validador v10 garante que a tela de permissões aceita todos os módulos do contexto.
 - **Ainda falta:** conciliação bancária (extratos), emissão de boleto/NF, previsão de recebimento por medição e relatório de inadimplência.
+
+## Devolução ao fornecedor (v11, 17/11/2026)
+
+`supabase/v11` (só uma função nova, sem mudar módulos nem permissões): em **Compras → Recebimentos → Devolver**.
+
+- **Atômica:** baixa o estoque do depósito do recebimento, acompanha o devolvido por item e acerta a obrigação gerada pelo recebimento, tudo na mesma transação. Reenvio da mesma operação não devolve duas vezes.
+- **Nunca** devolve mais que o recebido nem mais que o saldo do depósito; se um item do lote não tem saldo, a devolução inteira é recusada.
+- **Obrigação ainda "pendente de conferência":** o valor é reduzido (guarda o valor original) ou, se tudo foi devolvido, a obrigação é cancelada. O último trecho de um item fecha o valor exato, sem sobra de centavo.
+- **Obrigação já aprovada, paga ou conciliada:** não é alterada; fica **crédito pendente** com o fornecedor no recebimento (o acerto no financeiro é manual).
+- O **pedido não reabre**: comprar de novo é um novo pedido. Permissão: editar pedidos de compra **e** criar movimentação de estoque.
+
+## Isolamento entre empresas (teste automático, 17/11/2026)
+
+`supabase/isolamento/validar-isolamento.cjs` (no CI): duas empresas num banco descartável, com 61 verificações. O Master ou operador de uma empresa **não** lista, edita, cria, aprova, movimenta estoque, consome, entrega, lista usuários nem vê catálogos, totais ou auditoria de outra; o mesmo id em empresas diferentes não se mistura; registros de B não aceitam referências a dados de A; quem pertence às duas empresas tem o papel de cada uma separado (Master de A não grava em B); as tabelas não são lidas direto. **Resultado: nenhum vazamento.**
+
+## Áreas que ainda gravam só no navegador (varredura de 17/11/2026)
+
+O código antigo grava **272 chaves** no navegador. As do que já está no servidor (funcionários, obras, RDO, frequência, orçamentos, cadastros, estoque, compras, financeiro-despesas, frota, ausências, cotações, requisições, contas a receber) ficam **sem efeito**: as telas e funções foram interceptadas ou bloqueadas. As áreas abaixo **ainda não têm contrato no servidor** e, se usadas, gravam só no aparelho:
+
+| Área | Exemplos de dados locais |
+|---|---|
+| Medição de obras (Engenharia) | boletins e itens de medição, aditivos contratuais, BDI/EVM, cronograma físico-financeiro, planilha orçamentária, retenções e glosas |
+| Folha e RH avançado | vales e adiantamentos, holerites, fechamento de folha, advertências, atestados por período, espelho de ponto, cesta básica, escala de turnos |
+| Financeiro avançado | lançamentos financeiros antigos, transferências entre contas, conciliação e extratos, rateios multiobra, encargos de mora, competências fechadas |
+| Produção (Serralheria e Calhas) | ordens de produção, banco de retalhos, esquadrias e composições, bobinas e chapas, catálogo de calhas e rufos |
+| Estoque avançado | lotes perecíveis (FEFO), inventários de contagem cega, reservas comerciais, endereçamento físico, uniformes |
+| Compartilhamento e acesso externo | links de RDO e de obra, portal do fornecedor, acesso de fiscal, perfis e matriz de permissões antigos (a tela nova da v9 os substitui) |
+| Empreiteiros | contratos e medições de empreiteiros |
+
+Não foram tocadas porque não fazem parte do Manual de funções nem dos relatórios do Camilo. Cada área pede contratos próprios e uma decisão do Grupo sobre prioridade e uso real.

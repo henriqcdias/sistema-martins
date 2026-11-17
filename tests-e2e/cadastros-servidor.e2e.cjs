@@ -29,7 +29,7 @@ async function banco() {
     CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$ SELECT nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;`);
   await db.exec(sql('supabase/producao/base/estrutura_anterior_as_migracoes.sql'));
   await db.exec(`INSERT INTO public.martins_empresas(id, razao_social) VALUES ('${E}', 'Construtora Martins - cadastro inicial');`);
-  for (const d of ['supabase/producao/migrations', 'supabase/v2/migrations', 'supabase/v3/migrations', 'supabase/v4/migrations', 'supabase/v5/migrations', 'supabase/v6/migrations', 'supabase/v7/migrations', 'supabase/v8/migrations', 'supabase/v9/migrations', 'supabase/v10/migrations', 'supabase/v11/migrations'])
+  for (const d of ['supabase/producao/migrations', 'supabase/v2/migrations', 'supabase/v3/migrations', 'supabase/v4/migrations', 'supabase/v5/migrations', 'supabase/v6/migrations', 'supabase/v7/migrations', 'supabase/v8/migrations', 'supabase/v9/migrations', 'supabase/v10/migrations', 'supabase/v11/migrations', 'supabase/v12/migrations'])
     for (const f of fs.readdirSync(path.join(raiz, d)).sort()) await db.exec(sql(d + '/' + f));
   const [M, L] = Object.values(USUARIOS);
   await db.exec(`INSERT INTO auth.users VALUES ('${M}','master@teste.invalid'),('${L}','lancador@teste.invalid');
@@ -674,6 +674,16 @@ async function novo(page, campos) {
     await pm2.waitForFunction(() => document.querySelector('#cs-painel .cs-form #cs-descricao')?.value === 'Sinal da obra QA', null, { timeout: 15000 });
     check(await pm2.$eval('#cs-valor_centavos', n => n.value) === '350,00' && await pm2.$eval('#cs-vencimento', n => n.value) === '2026-12-20', 'lançar uma ENTRADA no formulário antigo do financeiro abre o cadastro de contas a receber do servidor');
     check(await semRastroLocal(pm2, 'Medição 1 QA').then(x => x.length === 0) && await semRastroLocal(pm2, 'Sinal da obra QA').then(x => x.length === 0), 'nada de contas a receber fica no navegador');
+    await pm2.evaluate(() => window.MartinsCadastrosServidor.fechar());
+
+    console.log('Gastos da obra (v12)');
+    await pm2.evaluate(() => window.MartinsCadastrosServidor.abrir('gastos_obra'));
+    await pm2.waitForSelector('#go-obra', { timeout: 15000 });
+    await pm2.selectOption('#go-obra', obraQa);
+    await pm2.waitForSelector('[data-go=resumo]');
+    // A: consumo líquido 4,5 un (2 − 0,5 do RDO + 3 da requisição) × custo médio R$ 5,00 (compra de 10 a R$ 5,00)
+    check(await pm2.$eval('[data-go=saida]', n => /4,5/.test(n.textContent) && /5,00/.test(n.textContent) && /22,50/.test(n.textContent)), 'a tela mostra o consumo líquido de A (4,5 un), o custo médio (R$ 5,00) e o custo (R$ 22,50)');
+    check(await pm2.$eval('[data-go=resumo]', n => /Total apropriado à obra/.test(n.textContent)), 'o resumo traz o total apropriado à obra, calculado no servidor');
     await pm2.evaluate(() => window.MartinsCadastrosServidor.fechar());
 
     console.log('Rodada 4: ficha, histórico, busca e mensagens');

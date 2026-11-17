@@ -200,3 +200,12 @@ O código antigo grava **272 chaves** no navegador. As do que já está no servi
 | Empreiteiros | contratos e medições de empreiteiros |
 
 Não foram tocadas porque não fazem parte do Manual de funções nem dos relatórios do Camilo. Cada área pede contratos próprios e uma decisão do Grupo sobre prioridade e uso real.
+
+## Gastos da obra (v12, 17/11/2026)
+
+`supabase/v12` (só leitura, uma função): aba **Gastos da obra**, visível ao **Master** e ao **Administrador com leitura integral** (preços e custos são sensíveis; operador comum e comprador são recusados pelo servidor).
+
+- **Material:** consumo líquido da obra (consumos − devoluções ao estoque) × **custo médio ponderado das compras recebidas** (valor recebido − valor devolvido ao fornecedor, sobre a quantidade líquida). Material sem compra (entrada manual) fica "sem custo" e fora do total, com aviso.
+- **Despesas diretas:** despesas da obra não canceladas, **sem as geradas por recebimento de compra** (o material delas entra pelo consumo; somar os dois contaria o mesmo gasto duas vezes). O valor dessas despesas excluídas aparece só como informação.
+- **Confidenciais:** só o Master as vê e soma; o Administrador não as vê nem sabe que existem (validado: nenhum valor vaza).
+- **Limite conhecido:** o custo médio é calculado na consulta, com os preços **de hoje**. Não congela o custo da data do consumo. Congelar exigiria gravar o custo em cada consumo e entrega (muda a v6 e a v8); fica como evolução, se o Grupo precisar de custo histórico fechado por competência.

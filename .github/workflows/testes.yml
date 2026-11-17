@@ -44,3 +44,5 @@ jobs:
         run: node supabase/v11/validar-v11.cjs .
       - name: Isolamento entre empresas
         run: node supabase/isolamento/validar-isolamento.cjs .
+      - name: Contratos v12 (gastos da obra)
+        run: node supabase/v12/validar-v12.cjs .

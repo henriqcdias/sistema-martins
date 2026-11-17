@@ -70,6 +70,7 @@
     compras: { titulo: 'Compras', colunas: [], campos: [] },
     requisicoes: { titulo: 'Requisições de material', colunas: [], campos: [] },
     usuarios: { titulo: 'Usuários e permissões', colunas: [], campos: [] },
+    gastos_obra: { titulo: 'Gastos da obra', colunas: [], campos: [] },
     epis: { titulo: 'EPIs e uniformes', colunas: ['codigo', 'nome', 'tamanho', 'estoque_minimo'], campos: [
       ['nome', 'Descrição', 'texto', { obrigatorio: true }], ['codigo', 'Código de referência', 'texto'], ['categoria', 'Categoria', 'texto'],
       ['tamanho', 'Tamanho / numeração', 'texto'], ['preco_centavos', 'Preço unitário de custo (R$)', 'dinheiro'], ['estoque_minimo', 'Estoque mínimo para alerta', 'numero']] },
@@ -116,7 +117,7 @@
   };
   const contexto = () => W.obterContextoSegurancaAutenticadoWork?.() || null;
   const vinculo = () => contexto()?.vinculos?.find(v => v.empresa_id === empresa) || null;
-  const pode = (m, a) => m === 'usuarios' ? master() : vinculo()?.permissoes?.[m === 'estoque' ? 'estoque_movimentos' : m === 'compras' ? 'pedidos_compra' : m === 'requisicoes' ? 'requisicoes_material' : m]?.[a] === true;
+  const pode = (m, a) => m === 'usuarios' ? master() : m === 'gastos_obra' ? (a === 'ler' && (master() || vinculo()?.papelServidor === 'administrador')) : vinculo()?.permissoes?.[m === 'estoque' ? 'estoque_movimentos' : m === 'compras' ? 'pedidos_compra' : m === 'requisicoes' ? 'requisicoes_material' : m]?.[a] === true;
   const master = () => vinculo()?.papelServidor === 'master';
   const gravacao = () => W.gravacaoHabilitadaWork?.() === true;
   const reais = c => (Number(c) / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -177,6 +178,7 @@
     if (aba === 'compras') return carregarCompras();
     if (aba === 'requisicoes') return carregarRequisicoes();
     if (aba === 'usuarios') return carregarUsuarios();
+    if (aba === 'gastos_obra') return carregarGastosObra();
     const linhas = await listarTodos(aba);
     registros = new Map(linhas.map(r => [r.id, r]));
     desenhar();
@@ -682,6 +684,34 @@
         el('p', { classe: 'cs-aviso', texto: 'Quem só tem "Ver" consulta, mas não grava. Despesas confidenciais continuam visíveis somente aos Masters, independentemente destas permissões.' })));
     }
   }
+  // ---------- Gastos da obra (v12): custo do material consumido + despesas diretas ----------
+  async function carregarGastosObra() {
+    const corpo = painel.querySelector('[data-cs=corpo]');
+    const produtos = await listarTodos('produtos').catch(() => []);
+    const nomeP = id => { const p = produtos.find(x => x.id === id); return p ? [p.dados.codigo, p.dados.descricao || p.dados.nome].filter(Boolean).join(' · ') : '—'; };
+    const obra = el('select', { id: 'go-obra', 'aria-label': 'Obra' }); obra.add(new Option('Escolha a obra…', '')); for (const o of catalogos.obras || []) obra.add(new Option([o.codigo, o.nome].filter(Boolean).join(' · '), o.id));
+    const saida = el('div', { 'data-go': 'saida' }, el('p', { classe: 'cs-aviso', texto: 'Escolha uma obra para ver o custo do material consumido e as despesas diretas. Só Master e Administrador com leitura integral veem custos.' }));
+    const consultar = async () => {
+      if (!obra.value) { saida.replaceChildren(); return; }
+      saida.replaceChildren(el('p', { texto: 'Consultando o servidor…' }));
+      try {
+        const g = await W.MartinsProducaoRpc.obraGastos({ e: empresa, obra: obra.value });
+        const linhas = g.material.map(m => el('tr', {}, el('td', { 'data-rotulo': 'Material', texto: nomeP(m.produto_id) }), el('td', { 'data-rotulo': 'Consumo líquido', texto: qtd(m.liquido_milli) }),
+          el('td', { 'data-rotulo': 'Custo médio unit.', texto: reais(m.custo_unitario_centavos) }), el('td', { 'data-rotulo': 'Custo', texto: reais(m.custo_centavos) })));
+        saida.replaceChildren(
+          el('section', {}, el('h3', { texto: 'Material consumido na obra' }), el('div', { classe: 'cs-rolagem' }, el('table', { classe: 'cs-tabela' },
+            el('thead', {}, el('tr', {}, ['Material', 'Consumo líquido', 'Custo médio unit.', 'Custo'].map(x => el('th', { texto: x })))), el('tbody', {}, linhas.length ? linhas : [el('tr', {}, el('td', { colspan: 4, classe: 'cs-vazio', texto: 'Nenhum material com custo consumido nesta obra.' }))])))),
+          g.sem_custo.length ? el('p', { classe: 'cs-aviso', texto: 'Sem custo (entrada manual, sem compra registrada), fora do total: ' + g.sem_custo.map(m => nomeP(m.produto_id) + ' (' + qtd(m.liquido_milli) + ')').join(', ') + '.' }) : null,
+          el('section', { classe: 'cs-totais', 'data-go': 'resumo' }, el('h4', { texto: 'Resumo da obra (calculado no servidor)' }),
+            el('div', { texto: 'Material consumido (valorizado): ' + reais(g.material_centavos) }), el('div', { texto: 'Despesas diretas da obra: ' + reais(g.despesas_diretas_centavos) + (g.confidenciais_incluidas_centavos ? ' (inclui ' + reais(g.confidenciais_incluidas_centavos) + ' confidenciais)' : '') }),
+            el('strong', { texto: 'Total apropriado à obra: ' + reais(g.total_centavos) })),
+          el('p', { classe: 'cs-aviso', texto: 'O custo do material usa o custo médio das compras recebidas (já descontadas as devoluções ao fornecedor), calculado agora: não congela o custo do dia do consumo. Compras feitas para a obra não são somadas às despesas, porque o material só vira custo da obra quando é consumido (' + reais(g.despesas_de_compras_nao_somadas_centavos) + ' de despesas de compras ficaram de fora para não contar duas vezes).' }));
+      } catch (e) { saida.replaceChildren(el('p', { classe: 'cs-erro', role: 'alert', texto: traduzir(e) })); }
+    };
+    obra.addEventListener('change', consultar);
+    corpo.replaceChildren(el('section', { classe: 'cs-form' }, el('h3', { texto: 'Gastos da obra' }), el('div', { classe: 'cs-acoes' }, obra)), saida);
+    mensagem('Gastos da obra: escolha a obra.');
+  }
   async function mostrarHistorico(reg) {
     const corpo = painel.querySelector('[data-cs=corpo]');
     const voltar = el('button', { type: 'button', classe: 'cs-secundario', texto: '← Voltar à lista', onclick: () => desenhar() });
@@ -824,8 +854,8 @@
     if (!painel) montar();
     painel.hidden = false; D.body.classList.add('cs-aberto');
     try { await sincronizarSessao(); painel.querySelector('[data-cs=empresa]').textContent = (vinculo()?.nomeEmpresa || '') + (master() ? ' · Master' : '') + (gravacao() ? '' : ' · somente leitura'); if (MODULOS[inicial] && pode(inicial, 'ler')) aba = inicial; desenharAbas(); if (aba) await carregarAba();
-      if (preenchimento && !['estoque', 'compras', 'requisicoes', 'usuarios'].includes(inicial) && aba !== inicial) { mensagem('O cadastro de ' + (MODULOS[inicial]?.titulo || inicial).toLowerCase() + ' ainda não está liberado para o seu vínculo nesta empresa (ou o módulo não foi habilitado no servidor). Nada foi gravado no navegador.', true); return; }
-      if (preenchimento && !['estoque', 'compras', 'requisicoes', 'usuarios'].includes(inicial) && aba === inicial) {
+      if (preenchimento && !['estoque', 'compras', 'requisicoes', 'usuarios', 'gastos_obra'].includes(inicial) && aba !== inicial) { mensagem('O cadastro de ' + (MODULOS[inicial]?.titulo || inicial).toLowerCase() + ' ainda não está liberado para o seu vínculo nesta empresa (ou o módulo não foi habilitado no servidor). Nada foi gravado no navegador.', true); return; }
+      if (preenchimento && !['estoque', 'compras', 'requisicoes', 'usuarios', 'gastos_obra'].includes(inicial) && aba === inicial) {
         if (!pode(aba, 'criar')) { mensagem('Seu vínculo não tem permissão para cadastrar ' + MODULOS[aba].titulo.toLowerCase() + '. Peça a liberação ao Master.', true); return; }
         abrirFormulario(null, preenchimento);
         mensagem('Este cadastro agora é gravado no servidor e compartilhado com a equipe. Confira os dados trazidos do formulário e clique em Salvar.');

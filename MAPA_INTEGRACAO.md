@@ -150,3 +150,9 @@ Dos 52 formulários do sistema, nenhum formulário de **cadastro** grava mais s�
 - **Vincular uma conta já criada** no Supabase Auth pelo e-mail. A conta (e a senha) continua sendo criada no painel do Supabase; o vínculo nasce **operacional e sem permissão nenhuma**. **Não existe tela nem função que crie ou promova Master** (decisão do banco, como no briefing).
 - **Atenção ao evoluir:** a lista de módulos de `martins_producao_permissoes_definir` e do editor da tela precisa acompanhar cada módulo novo.
 - **Produção:** esta migração mexe em quem acessa a empresa; só vai para o banco de produção com autorização do Henrique.
+
+## Importação do XML da NF-e no recebimento (16/11/2026)
+
+Sem mudança no banco. Em **Compras → Receber**, o botão de arquivo lê o XML da NF-e **no próprio navegador** (nada vai a terceiros) e **só preenche** o formulário: número da nota (sem zeros à esquerda), chave de acesso (44 dígitos) e a quantidade dos itens que casam com o pedido **pelo código do produto**. Itens sem correspondência ficam de fora e a tela avisa; se o CNPJ/CPF do emitente não é o do fornecedor do pedido, aparece um alerta. XML com DOCTYPE/ENTITY, arquivo que não é NF-e e arquivo grande demais são recusados. Quem grava e impede a nota duplicada continua sendo o servidor (v5).
+
+Ainda não faz: casar item por descrição, criar produto ou fornecedor a partir do XML, ler preços/impostos, nem importar NF de venda.

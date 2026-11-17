@@ -461,6 +461,23 @@ async function novo(page, campos) {
     await pm2.click('#cs-painel button:text-is("Confirmar recebimento")');
     await pm2.waitForFunction(() => /nota fiscal já foi recebida/.test(document.querySelector('#cs-painel .cs-erro')?.textContent || ''));
     check((await db.query(`SELECT count(*)::int n FROM martins_producao_v1.registros WHERE modulo='despesas' AND dados->>'documento_numero'='5501'`)).rows[0].n === 1, 'a mesma NF não entra duas vezes: mensagem clara e nada duplicado');
+    // importação do XML da NF-e no recebimento (o XML só preenche; o servidor decide e grava)
+    const CHAVE = '31261112345678000190550010000055021000055021';
+    const nfeXml = (nNF, chave, itens) => `<?xml version="1.0" encoding="UTF-8"?><nfeProc xmlns="http://www.portalfiscal.inf.br/nfe"><NFe><infNFe Id="NFe${chave}" versao="4.00"><ide><nNF>${nNF}</nNF></ide><emit><CNPJ>12345678000190</CNPJ><xNome>Fornecedor Teste Ltda</xNome></emit>${itens.map(i => `<det><prod><cProd>${i[0]}</cProd><xProd>${i[0]} item</xProd><qCom>${i[1]}</qCom></prod></det>`).join('')}</infNFe></NFe></nfeProc>`;
+    await pm2.setInputFiles('#rc-xml', { name: 'doctype.xml', mimeType: 'text/xml', buffer: Buffer.from('<?xml version="1.0"?><!DOCTYPE x [<!ENTITY a "b">]><x/>') });
+    await pm2.waitForFunction(() => /recusado por segurança/.test(document.querySelector('#cs-painel .cs-erro')?.textContent || ''));
+    check(true, 'XML com DOCTYPE/ENTITY é recusado por segurança');
+    await pm2.setInputFiles('#rc-xml', { name: 'invalido.xml', mimeType: 'text/xml', buffer: Buffer.from('isto não é xml') });
+    await pm2.waitForFunction(() => /não é um XML válido/.test(document.querySelector('#cs-painel .cs-erro')?.textContent || ''));
+    check(true, 'arquivo que não é XML é recusado com mensagem clara');
+    await pm2.setInputFiles('#rc-xml', { name: 'nfe.xml', mimeType: 'text/xml', buffer: Buffer.from(nfeXml('0005502', CHAVE, [['B', '4'], ['ZZZ', '9']])) });
+    await pm2.waitForFunction(() => /XML lido: NF 5502/.test(document.querySelector('[data-rc=xml]')?.textContent || ''));
+    check(await pm2.$eval('#rc-nf', n => n.value) === '5502' && await pm2.$eval('#rc-chave', n => n.value) === '31261112345678000190550010000055021000055021', 'o XML preenche o número (sem zeros à esquerda) e a chave de acesso');
+    check(await pm2.$eval('#cs-painel .cs-form input[aria-label^="Quantidade recebida"]', n => n.value) === '4' && /2 item\(ns\); 1 casado/.test(await pm2.$eval('[data-rc=xml]', n => n.textContent)), 'a quantidade do item casado pelo código (B = 4) é preenchida; o item sem correspondência fica de fora e é avisado');
+    await pm2.click('#cs-painel button:text-is("Confirmar recebimento")');
+    await pm2.waitForSelector('[data-cp=pedidos] tbody tr:has-text("Recebido"):not(:has-text("em parte"))');
+    const rec2 = (await db.query(`SELECT dados FROM martins_producao_v1.registros WHERE modulo='recebimentos_compra' AND dados->>'numero_nf'='5502'`)).rows;
+    check(rec2.length === 1 && rec2[0].dados.chave_acesso === CHAVE, 'recebimento gravado no servidor com o número e a chave vindos do XML; pedido concluído');
     await pm2.evaluate(() => window.MartinsCadastrosServidor.fechar());
     await pm2.evaluate(() => { const f = document.getElementById('form-novo-pedido-compra'); const m = f.closest('[id^=modal-]'); if (m) { m.classList.remove('hidden'); m.style.display = 'flex'; } f.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true })); });
     await pm2.waitForSelector('#cp-fornecedor', { timeout: 10000 });

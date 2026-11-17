@@ -389,6 +389,22 @@
     }
     const r = await api.send(pendenteCompras.op); pendenteCompras = null; return r;
   }
+  // Leitura do XML da NF-e no próprio navegador (nada é enviado a terceiros). O XML só PREENCHE o
+  // formulário de recebimento; quem decide e grava é o servidor (que ainda impede a mesma nota duas vezes).
+  function lerNFe(texto) {
+    if (typeof texto !== 'string' || texto.length > 3000000) throw Error('Arquivo grande demais para ser uma NF-e.');
+    if (/<!DOCTYPE|<!ENTITY/i.test(texto)) throw Error('XML recusado por segurança (contém declaração DOCTYPE/ENTITY).');
+    const doc = new DOMParser().parseFromString(texto, 'application/xml');
+    if (doc.getElementsByTagName('parsererror').length) throw Error('O arquivo não é um XML válido.');
+    const um = (raiz, nome) => raiz?.getElementsByTagNameNS('*', nome)[0] || null, tx = (raiz, nome) => (um(raiz, nome)?.textContent || '').trim();
+    const inf = um(doc, 'infNFe'); if (!inf) throw Error('Este XML não é uma NF-e (elemento infNFe não encontrado).');
+    const chave = (inf.getAttribute('Id') || '').replace(/\D/g, '');
+    const ide = um(inf, 'ide'), emit = um(inf, 'emit');
+    const itens = [...inf.getElementsByTagNameNS('*', 'det')].map(det => { const prod = um(det, 'prod'); return { codigo: tx(prod, 'cProd'), descricao: tx(prod, 'xProd'), qtd: Number(tx(prod, 'qCom').replace(',', '.')) }; });
+    const numero = tx(ide, 'nNF').replace(/^0+(?=\d)/, '');
+    if (chave.length !== 44 && !numero) throw Error('Não encontrei a chave de acesso nem o número da nota neste XML.');
+    return { chave: chave.length === 44 ? chave : '', numero, emitenteDoc: tx(emit, 'CNPJ') || tx(emit, 'CPF'), emitenteNome: tx(emit, 'xNome'), itens };
+  }
   async function carregarCompras() {
     const [produtos, depositos, pedidos, recebs] = await Promise.all([listarTodos('produtos').catch(() => []), listarTodos('depositos').catch(() => []), listarTodos('pedidos_compra'), listarTodos('recebimentos_compra').catch(() => [])]);
     const nomeF = id => (catalogos.fornecedores || []).find(x => x.id === id)?.nome || '—';
@@ -443,6 +459,29 @@
       const dep = el('select', { id: 'rc-deposito' }); dep.add(new Option('Depósito de destino', '')); for (const x of depositos.filter(z => z.dados.ativo !== false)) dep.add(new Option(x.dados.nome, x.id));
       const campos = p.dados.itens.filter(i => i.recebido_milli < i.qtd_milli).map(i => ({ i, input: el('input', { type: 'text', inputmode: 'decimal', value: (((i.qtd_milli - i.recebido_milli)) / 1000).toString().replace('.', ','), 'aria-label': 'Quantidade recebida de ' + nomeP(i.produto_id) }) }));
       const nf = el('input', { id: 'rc-nf', type: 'text', placeholder: 'Nº da nota fiscal' }), chave = el('input', { id: 'rc-chave', type: 'text', placeholder: 'Chave de acesso (44 dígitos, opcional)', maxlength: '60' });
+      const resumoXml = el('p', { classe: 'cs-aviso', 'data-rc': 'xml', texto: 'Se tiver o XML da NF-e, importe-o: o número, a chave e as quantidades são preenchidos para você conferir.' });
+      const arquivo = el('input', { id: 'rc-xml', type: 'file', accept: '.xml,text/xml,application/xml', 'aria-label': 'Importar XML da NF-e' });
+      arquivo.addEventListener('change', async () => {
+        const f = arquivo.files?.[0]; if (!f) return; erro.textContent = '';
+        try {
+          const nfe = lerNFe(await f.text());
+          nf.value = nfe.numero || nf.value; chave.value = nfe.chave || chave.value;
+          const fornecedores = await listarTodos('fornecedores').catch(() => []);
+          const forn = fornecedores.find(x => x.id === p.dados.fornecedor_id);
+          const docForn = String(forn?.dados?.documento || '').replace(/\D/g, '');
+          let casados = 0; const avisos = [];
+          for (const c of campos) {
+            const prod = produtos.find(x => x.id === c.i.produto_id);
+            const cod = String(prod?.dados?.codigo || '').trim().toLowerCase();
+            const linha = cod && nfe.itens.find(i => i.codigo.trim().toLowerCase() === cod);
+            if (linha && Number.isFinite(linha.qtd) && linha.qtd > 0) { c.input.value = String(Math.min(linha.qtd, (c.i.qtd_milli - c.i.recebido_milli) / 1000)).replace('.', ','); casados++; }
+            else c.input.value = '';
+          }
+          if (docForn && nfe.emitenteDoc && docForn !== nfe.emitenteDoc.replace(/\D/g, '')) avisos.push('ATENÇÃO: o CNPJ/CPF do emitente da nota (' + nfe.emitenteDoc + ') não é o do fornecedor do pedido.');
+          const sobra = nfe.itens.length - casados;
+          resumoXml.textContent = 'XML lido: NF ' + (nfe.numero || '—') + ' de ' + (nfe.emitenteNome || 'emitente não informado') + ', ' + nfe.itens.length + ' item(ns); ' + casados + ' casado(s) com o pedido pelo código do produto' + (sobra > 0 ? '. Itens sem correspondência ficam de fora: confira as quantidades abaixo.' : '.') + (avisos.length ? ' ' + avisos.join(' ') : '');
+        } catch (e) { erro.textContent = e.message || 'Não foi possível ler o XML.'; arquivo.value = ''; }
+      });
       const erro = el('p', { classe: 'cs-erro', role: 'alert' });
       const ok = el('button', { type: 'button', classe: 'cs-primario', texto: 'Confirmar recebimento', disabled: !gravacao(), onclick: async () => {
         ok.disabled = true; erro.textContent = '';
@@ -457,7 +496,7 @@
         } catch (e) { erro.textContent = traduzir(e); ok.disabled = !gravacao(); }
       } });
       corpo.replaceChildren(el('section', { classe: 'cs-form' }, el('h3', { texto: 'Receber pedido nº ' + p.dados.numero + ' · ' + nomeF(p.dados.fornecedor_id) }),
-        el('div', { classe: 'cs-acoes' }, dep, nf, chave), ...campos.map(c => el('div', { classe: 'cs-acoes' }, el('span', { texto: nomeP(c.i.produto_id) + ' (falta ' + qtd(c.i.qtd_milli - c.i.recebido_milli) + ')' }), c.input)),
+        el('div', { classe: 'cs-acoes' }, dep, nf, chave), el('div', { classe: 'cs-acoes' }, arquivo), resumoXml, ...campos.map(c => el('div', { classe: 'cs-acoes' }, el('span', { texto: nomeP(c.i.produto_id) + ' (falta ' + qtd(c.i.qtd_milli - c.i.recebido_milli) + ')' }), c.input)),
         el('div', { classe: 'cs-acoes' }, ok, el('button', { type: 'button', classe: 'cs-secundario', texto: 'Cancelar', onclick: () => carregarCompras() })), erro,
         el('p', { classe: 'cs-aviso', texto: 'Ao confirmar: o estoque recebe a entrada e é gerada a obrigação "pendente de conferência" (nada é pago automaticamente). A mesma nota não pode ser lançada duas vezes.' })));
     }
@@ -867,7 +906,7 @@
   // Não viram cadastro: contas de acesso nascem no Supabase Auth; empresas são provisionadas no banco.
   const BLOQUEADOS = {
     'form-novo-fiscal': 'Acesso de fiscal externo é uma conta de login: deve ser criado pelo administrador no Supabase Auth, nunca com senha guardada no navegador.',
-    'form-cadastro-nfe-fiscal': 'A nota fiscal de compra agora é registrada no recebimento do pedido (Cadastros e Despesas → Compras), que evita lançar a mesma nota duas vezes. A importação de XML ainda não está no servidor.',
+    'form-cadastro-nfe-fiscal': 'A nota fiscal de compra agora é registrada no recebimento do pedido (Cadastros e Despesas → Compras → Receber), onde você também pode importar o XML da NF-e. O servidor evita lançar a mesma nota duas vezes.',
     'form-cadastrar-empresa': 'As empresas do grupo são cadastradas no banco pelo administrador. Peça a inclusão ou alteração ao Master responsável.',
   };
   function converter(valor, tipo) {

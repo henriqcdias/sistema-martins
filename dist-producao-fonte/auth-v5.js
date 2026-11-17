@@ -90,7 +90,8 @@
       '/rest/v1/rpc/martins_producao_consultar',
       '/rest/v1/rpc/martins_producao_despesas_totais',
       '/rest/v1/rpc/martins_producao_auditoria',
-      '/rest/v1/rpc/martins_producao_estoque_saldos'
+      '/rest/v1/rpc/martins_producao_estoque_saldos',
+      '/rest/v1/rpc/martins_producao_obra_materiais'
     ].includes(path);
     // Gravação só quando o build a habilita explicitamente (homologação); a produção permanece somente leitura.
     const escrita = gravacaoHabilitadaWork() && schema === 'public' && method === 'POST' && [
@@ -98,6 +99,8 @@
       '/rest/v1/rpc/martins_producao_salvar_lote',
       '/rest/v1/rpc/martins_producao_despesa_estado',
       '/rest/v1/rpc/martins_producao_estoque_mover',
+      '/rest/v1/rpc/martins_producao_obra_consumir',
+      '/rest/v1/rpc/martins_producao_obra_devolver',
       '/rest/v1/rpc/martins_producao_compras_estado',
       '/rest/v1/rpc/martins_producao_compras_receber'
     ].includes(path);
@@ -427,6 +430,9 @@
     salvar:args=>rpcProducao('martins_producao_salvar',args),
     catalogos:e=>rpcProducao('martins_producao_catalogos',{e}),
     lote:args=>rpcProducao('martins_producao_salvar_lote',args),
+    obraConsumir:args=>rpcProducao('martins_producao_obra_consumir',args),
+    obraDevolver:args=>rpcProducao('martins_producao_obra_devolver',args),
+    obraMateriais:args=>rpcProducao('martins_producao_obra_materiais',args),
     comprasEstado:args=>rpcProducao('martins_producao_compras_estado',args),
     comprasReceber:args=>rpcProducao('martins_producao_compras_receber',args),
     estoqueSaldos:e=>rpcProducao('martins_producao_estoque_saldos',{e}),

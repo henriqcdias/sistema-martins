@@ -29,7 +29,7 @@ async function banco() {
     CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$ SELECT nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;`);
   await db.exec(sql('supabase/producao/base/estrutura_anterior_as_migracoes.sql'));
   await db.exec(`INSERT INTO public.martins_empresas(id, razao_social) VALUES ('${E}', 'Construtora Martins - cadastro inicial');`);
-  for (const d of ['supabase/producao/migrations', 'supabase/v2/migrations', 'supabase/v3/migrations', 'supabase/v4/migrations', 'supabase/v5/migrations'])
+  for (const d of ['supabase/producao/migrations', 'supabase/v2/migrations', 'supabase/v3/migrations', 'supabase/v4/migrations', 'supabase/v5/migrations', 'supabase/v6/migrations'])
     for (const f of fs.readdirSync(path.join(raiz, d)).sort()) await db.exec(sql(d + '/' + f));
   const [M, L] = Object.values(USUARIOS);
   await db.exec(`INSERT INTO auth.users VALUES ('${M}','master@teste.invalid'),('${L}','lancador@teste.invalid');
@@ -39,7 +39,7 @@ async function banco() {
   return db;
 }
 
-const TIPOS = { e: 'uuid', r: 'uuid', apos: 'uuid', op: 'uuid', v: 'bigint', limite: 'integer', d: 'jsonb', itens: 'jsonb', de: 'date', ate: 'date', m: 'text', estado: 'text', motivo: 'text', tipo: 'text', produto: 'uuid', origem: 'uuid', destino: 'uuid', qtd: 'bigint', ref: 'uuid', pedido: 'uuid', deposito: 'uuid', documento: 'jsonb' };
+const TIPOS = { e: 'uuid', r: 'uuid', apos: 'uuid', op: 'uuid', v: 'bigint', limite: 'integer', d: 'jsonb', itens: 'jsonb', de: 'date', ate: 'date', m: 'text', estado: 'text', motivo: 'text', tipo: 'text', produto: 'uuid', origem: 'uuid', destino: 'uuid', qtd: 'bigint', ref: 'uuid', pedido: 'uuid', deposito: 'uuid', documento: 'jsonb', obra: 'uuid', rdo: 'uuid', consumo: 'uuid' };
 async function supabase(db, route) {
   const req = route.request(), url = new URL(req.url());
   const json = (status, body) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
@@ -465,6 +465,30 @@ async function novo(page, campos) {
     await pm2.evaluate(() => { const f = document.getElementById('form-novo-pedido-compra'); const m = f.closest('[id^=modal-]'); if (m) { m.classList.remove('hidden'); m.style.display = 'flex'; } f.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true })); });
     await pm2.waitForSelector('#cp-fornecedor', { timeout: 10000 });
     check(true, 'o formulário antigo de pedido de compra abre o módulo de compras do servidor');
+    await pm2.evaluate(() => window.MartinsCadastrosServidor.fechar());
+
+    console.log('Consumo de material na obra (v6)');
+    const obraQa = (await db.query(`SELECT id FROM martins_producao_v1.registros WHERE modulo='obras' AND dados->>'nome'='QA Obra Engenharia'`)).rows[0].id;
+    const RDOID = '00000000-0000-4000-8000-0000000000e1';
+    await db.query(`INSERT INTO martins_producao_v1.registros(empresa_id,modulo,id,revisao,dados,criado_por,atualizado_por) VALUES ($1,'rdos',$2,1,$3::jsonb,$4,$4)`, [E, RDOID, JSON.stringify({ obra_id: obraQa, numero: 1, data: '2026-11-16', status: 'rascunho', trabalhadores: [] }), M]);
+    await pm2.evaluate(() => window.MartinsCadastrosServidor.abrir('estoque'));
+    await pm2.waitForSelector('#co-obra', { timeout: 15000 });
+    const consumir = async (qtdTxt) => {
+      await pm2.selectOption('#co-obra', obraQa); await pm2.selectOption('#co-rdo', RDOID); await pm2.selectOption('#co-deposito', DA); await pm2.selectOption('#co-produto', PA);
+      await pm2.fill('#co-qtd', qtdTxt); await pm2.evaluate(() => { document.querySelector('[data-cs=status]').textContent = ''; }); await pm2.click('#cs-painel button:text-is("Registrar consumo")');
+    };
+    await consumir('2');
+    await pm2.waitForFunction(() => /Estoque: \d+ saldo/.test(document.querySelector('[data-cs=status]')?.textContent || ''));
+    check(Number((await db.query(`SELECT martins_producao_v1.saldo($1,$2,$3) s`, [E, PA, DA])).rows[0].s) === 18000, 'consumo de 2 de A no RDO baixou o estoque: 20 → 18');
+    await consumir('1');
+    await pm2.waitForFunction(() => [...document.querySelectorAll('#cs-painel .cs-erro')].some(n => /já foi baixado neste RDO/.test(n.textContent)));
+    check(Number((await db.query(`SELECT martins_producao_v1.saldo($1,$2,$3) s`, [E, PA, DA])).rows[0].s) === 18000, 'o mesmo material no mesmo RDO é recusado com mensagem clara (baixa única)');
+    await pm2.fill('#cs-painel tbody tr:has-text("Consumo na obra") input[aria-label="Quantidade a devolver"]', '0,5');
+    await pm2.fill('#cs-painel tbody tr:has-text("Consumo na obra") input[aria-label="Motivo da devolução"]', 'sobrou na obra');
+    await pm2.click('#cs-painel tbody tr:has-text("Consumo na obra") button:text-is("Devolver ao estoque")');
+    await pm2.waitForSelector('#cs-painel tbody tr:has-text("Devolução da obra")');
+    check(Number((await db.query(`SELECT martins_producao_v1.saldo($1,$2,$3) s`, [E, PA, DA])).rows[0].s) === 18500, 'devolver 0,5 volta ao depósito: 18 → 18,5');
+    check(await pm2.$$eval('#cs-painel tbody tr', t => t.filter(r => /Consumo na obra|Devolução da obra/.test(r.textContent) && [...r.querySelectorAll('button')].some(b => b.textContent === 'Estornar')).length === 0), 'consumo e devolução da obra não oferecem "Estornar" (a correção é a devolução)');
     await pm2.evaluate(() => window.MartinsCadastrosServidor.fechar());
 
     console.log('Rodada 4: ficha, histórico, busca e mensagens');

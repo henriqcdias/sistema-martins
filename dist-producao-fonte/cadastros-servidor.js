@@ -261,7 +261,7 @@
     return v ?? '';
   }
   // ---------- Estoque (v4): movimentações imutáveis; o saldo vem do servidor ----------
-  const TIPOS_MOV = { entrada: 'Entrada', saida: 'Saída', transferencia: 'Transferência', estorno: 'Estorno' };
+  const TIPOS_MOV = { entrada: 'Entrada', saida: 'Saída', transferencia: 'Transferência', estorno: 'Estorno', consumo: 'Consumo na obra', devolucao_obra: 'Devolução da obra' };
   const milli = v => { const n = Number(String(v).trim().replace(/\./g, '').replace(',', '.')); if (!Number.isFinite(n) || n <= 0) throw Error('Informe uma quantidade maior que zero.'); return Math.round(n * 1000); };
   const qtd = m => (Number(m) / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 3 });
   let pendenteEstoque = null;
@@ -296,21 +296,50 @@
         !gravacao() ? el('p', { classe: 'cs-aviso', texto: ERROS.PREVIA_SOMENTE_LEITURA }) : null,
         !produtos.length || !depositos.length ? el('p', { classe: 'cs-aviso', texto: 'Cadastre ao menos um produto e um depósito (abas Produtos e Depósitos) antes de movimentar.' }) : null));
     }
+    // Consumo de material na obra (baixa única por RDO e produto); correção por devolução.
+    if (pode('estoque', 'criar') && (catalogos.obras || []).length) {
+      const rdosTodos = await listarTodos('rdos').catch(() => []);
+      const so = (id, lista, vazio) => { const s = el('select', { id }); s.add(new Option(vazio, '')); for (const [v, t] of lista) s.add(new Option(t, v)); return s; };
+      const obraSel = so('co-obra', (catalogos.obras || []).map(o => [o.id, o.nome]), 'Obra'), rdoSel = so('co-rdo', [], 'RDO (opcional)');
+      obraSel.addEventListener('change', () => { rdoSel.replaceChildren(new Option('RDO (opcional)', '')); for (const r of rdosTodos.filter(x => x.dados.obra_id === obraSel.value).sort((a, b) => String(b.dados.data).localeCompare(String(a.dados.data)))) rdoSel.add(new Option('RDO ' + r.dados.numero + ' · ' + String(r.dados.data).split('-').reverse().join('/'), r.id)); });
+      const depSel = so('co-deposito', ativos(depositos).map(x => [x.id, x.dados.nome]), 'Depósito'), prodSel = so('co-produto', ativos(produtos).map(x => [x.id, nomeP(x.id)]), 'Material');
+      const qc = el('input', { id: 'co-qtd', type: 'text', inputmode: 'decimal', placeholder: 'Quantidade', 'aria-label': 'Quantidade consumida' }), erroC = el('p', { classe: 'cs-erro', role: 'alert' });
+      const bc = el('button', { type: 'button', classe: 'cs-primario', texto: 'Registrar consumo', disabled: !gravacao(), onclick: async () => {
+        bc.disabled = true; erroC.textContent = '';
+        try {
+          if (!obraSel.value || !depSel.value || !prodSel.value) throw Error('Escolha a obra, o depósito e o material.');
+          const args = { e: empresa, obra: obraSel.value, deposito: depSel.value, itens: [{ produto_id: prodSel.value, qtd_milli: milli(qc.value) }], rdo: rdoSel.value || null, motivo: null };
+          const k = JSON.stringify(args); if (!pendenteEstoque || pendenteEstoque.chave !== k) pendenteEstoque = { chave: k, op: crypto.randomUUID() };
+          await W.MartinsProducaoRpc.obraConsumir({ ...args, op: pendenteEstoque.op }); pendenteEstoque = null;
+          mensagem('Consumo registrado: baixa única no estoque.'); await carregarEstoque();
+        } catch (e) { erroC.textContent = traduzir(e); bc.disabled = !gravacao(); }
+      } });
+      secoes.push(el('section', { classe: 'cs-form' }, el('h3', { texto: 'Consumo de material na obra' }), el('div', { classe: 'cs-acoes' }, obraSel, rdoSel, depSel, prodSel, qc, bc), erroC,
+        el('p', { classe: 'cs-aviso', texto: 'Um material só pode ser baixado uma vez por RDO. Se baixou a mais, registre uma devolução na linha do consumo (abaixo).' })));
+    }
     const saldos = saldosBrutos.map(s => el('tr', {}, el('td', { 'data-rotulo': 'Produto', texto: nomeP(s.produto_id) }), el('td', { 'data-rotulo': 'Depósito', texto: nomeD(s.deposito_id) }), el('td', { 'data-rotulo': 'Saldo', texto: qtd(s.saldo_milli) })));
     secoes.push(el('section', {}, el('h3', { texto: 'Saldos (calculados pelo servidor)' }), el('div', { classe: 'cs-rolagem' }, el('table', { classe: 'cs-tabela' },
       el('thead', {}, el('tr', {}, ['Produto', 'Depósito', 'Saldo'].map(t => el('th', { texto: t })))), el('tbody', {}, saldos.length ? saldos : [el('tr', {}, el('td', { colspan: 3, classe: 'cs-vazio', texto: 'Nenhum saldo. Registre uma entrada para começar.' }))])))));
     const estornados = new Set(movs.filter(m => m.dados.tipo === 'estorno').map(m => m.dados.ref_id));
     const ordenadas = movs.slice().sort((a, b) => String(b.criado_em).localeCompare(String(a.criado_em))).slice(0, 100);
     const linhas = ordenadas.map(m => {
-      const d = m.dados, podeEstornar = pode('estoque', 'editar') && d.tipo !== 'estorno' && !estornados.has(m.id);
+      const d = m.dados, podeEstornar = pode('estoque', 'editar') && !['estorno', 'consumo', 'devolucao_obra'].includes(d.tipo) && !estornados.has(m.id);
+      const devolvidoMilli = d.tipo === 'consumo' ? movs.filter(x => x.dados.tipo === 'devolucao_obra' && x.dados.ref_id === m.id).reduce((t, x) => t + Number(x.dados.quantidade_milli), 0) : 0;
+      const restante = d.tipo === 'consumo' ? Number(d.quantidade_milli) - devolvidoMilli : 0;
+      const nomeObra = id => (catalogos.obras || []).find(o => o.id === id)?.nome || '';
+      const devolver = d.tipo === 'consumo' && restante > 0 && pode('estoque', 'editar') ? (() => {
+        const qd = el('input', { type: 'text', inputmode: 'decimal', placeholder: 'Qtd a devolver', 'aria-label': 'Quantidade a devolver' }), mo = el('input', { type: 'text', placeholder: 'Motivo da devolução', 'aria-label': 'Motivo da devolução' });
+        return el('div', { classe: 'cs-estado' }, qd, mo, el('button', { type: 'button', classe: 'cs-secundario', texto: 'Devolver ao estoque', disabled: !gravacao(), onclick: async () => {
+          try { await W.MartinsProducaoRpc.obraDevolver({ e: empresa, op: crypto.randomUUID(), consumo: m.id, qtd: milli(qd.value), motivo: mo.value.trim() }); mensagem('Devolução registrada.'); await carregarEstoque(); } catch (e) { mensagem(traduzir(e), true); } } }));
+      })() : null;
       const motivo = el('input', { type: 'text', placeholder: 'Motivo do estorno', 'aria-label': 'Motivo do estorno', maxlength: '500' });
       return el('tr', {}, el('td', { 'data-rotulo': 'Quando', texto: new Date(m.criado_em).toLocaleString('pt-BR') }), el('td', { 'data-rotulo': 'Tipo', texto: TIPOS_MOV[d.tipo] + (estornados.has(m.id) ? ' (estornado)' : '') }),
-        el('td', { 'data-rotulo': 'Produto', texto: nomeP(d.produto_id) }), el('td', { 'data-rotulo': 'De → Para', texto: [nomeD(d.origem_id), nomeD(d.destino_id)].filter(Boolean).join(' → ') }),
+        el('td', { 'data-rotulo': 'Produto', texto: nomeP(d.produto_id) }), el('td', { 'data-rotulo': 'De → Para', texto: [nomeD(d.origem_id), nomeD(d.destino_id)].filter(Boolean).join(' → ') + (d.obra_id ? ' · obra: ' + nomeObra(d.obra_id) : '') }),
         el('td', { 'data-rotulo': 'Quantidade', texto: qtd(d.quantidade_milli) }), el('td', { 'data-rotulo': 'Motivo', texto: d.motivo || '' }),
         el('td', {}, podeEstornar ? el('div', { classe: 'cs-estado' }, motivo, el('button', { type: 'button', classe: 'cs-perigo', texto: 'Estornar', disabled: !gravacao(), onclick: async () => {
           if (!motivo.value.trim()) { motivo.focus(); mensagem('Informe o motivo do estorno.', true); return; }
           try { await W.MartinsProducaoRpc.estoqueMover({ e: empresa, op: crypto.randomUUID(), tipo: 'estorno', produto: null, origem: null, destino: null, qtd: null, motivo: motivo.value.trim(), ref: m.id }); mensagem('Movimento estornado.'); await carregarEstoque(); }
-          catch (e) { mensagem(traduzir(e), true); } } })) : null));
+          catch (e) { mensagem(traduzir(e), true); } } })) : devolver));
     });
     secoes.push(el('section', {}, el('h3', { texto: 'Movimentações (as 100 mais recentes)' }), el('div', { classe: 'cs-rolagem' }, el('table', { classe: 'cs-tabela' },
       el('thead', {}, el('tr', {}, ['Quando', 'Tipo', 'Produto', 'De → Para', 'Quantidade', 'Motivo', ''].map(t => el('th', { texto: t })))), el('tbody', {}, linhas.length ? linhas : [el('tr', {}, el('td', { colspan: 7, classe: 'cs-vazio', texto: 'Nenhuma movimentação.' }))])))));

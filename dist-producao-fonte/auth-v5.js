@@ -114,7 +114,9 @@
       '/rest/v1/rpc/martins_producao_receber_baixar',
       '/rest/v1/rpc/martins_producao_receber_estado',
       '/rest/v1/rpc/martins_producao_receber_estornar',
-      '/rest/v1/rpc/martins_producao_compras_devolver'
+      '/rest/v1/rpc/martins_producao_compras_devolver',
+      '/rest/v1/rpc/martins_producao_backup_exportar',
+      '/rest/v1/rpc/martins_producao_backup_importar'
     ].includes(path);
     const sessaoPermitida = (method === 'POST' && [
       '/auth/v1/token?grant_type=password',
@@ -449,6 +451,8 @@
     comprasReceber:args=>rpcProducao('martins_producao_compras_receber',args),
     reqEstado:args=>rpcProducao('martins_producao_req_estado',args),
     reqEntregar:args=>rpcProducao('martins_producao_req_entregar',args),
+    backupExportar:e=>rpcProducao('martins_producao_backup_exportar',{e}),
+    backupImportar:args=>rpcProducao('martins_producao_backup_importar',args),
     comprasDevolver:args=>rpcProducao('martins_producao_compras_devolver',args),
     obraGastos:args=>rpcProducao('martins_producao_obra_gastos',args),
     receberTotais:e=>rpcProducao('martins_producao_receber_totais',{e}),

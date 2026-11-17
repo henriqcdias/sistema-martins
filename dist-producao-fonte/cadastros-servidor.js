@@ -71,6 +71,7 @@
     requisicoes: { titulo: 'Requisições de material', colunas: [], campos: [] },
     usuarios: { titulo: 'Usuários e permissões', colunas: [], campos: [] },
     gastos_obra: { titulo: 'Gastos da obra', colunas: [], campos: [] },
+    backup: { titulo: 'Backup e restauração', colunas: [], campos: [] },
     epis: { titulo: 'EPIs e uniformes', colunas: ['codigo', 'nome', 'tamanho', 'estoque_minimo'], campos: [
       ['nome', 'Descrição', 'texto', { obrigatorio: true }], ['codigo', 'Código de referência', 'texto'], ['categoria', 'Categoria', 'texto'],
       ['tamanho', 'Tamanho / numeração', 'texto'], ['preco_centavos', 'Preço unitário de custo (R$)', 'dinheiro'], ['estoque_minimo', 'Estoque mínimo para alerta', 'numero']] },
@@ -117,7 +118,7 @@
   };
   const contexto = () => W.obterContextoSegurancaAutenticadoWork?.() || null;
   const vinculo = () => contexto()?.vinculos?.find(v => v.empresa_id === empresa) || null;
-  const pode = (m, a) => m === 'usuarios' ? master() : m === 'gastos_obra' ? (a === 'ler' && (master() || vinculo()?.papelServidor === 'administrador')) : vinculo()?.permissoes?.[m === 'estoque' ? 'estoque_movimentos' : m === 'compras' ? 'pedidos_compra' : m === 'requisicoes' ? 'requisicoes_material' : m]?.[a] === true;
+  const pode = (m, a) => m === 'usuarios' || m === 'backup' ? master() : m === 'gastos_obra' ? (a === 'ler' && (master() || vinculo()?.papelServidor === 'administrador')) : vinculo()?.permissoes?.[m === 'estoque' ? 'estoque_movimentos' : m === 'compras' ? 'pedidos_compra' : m === 'requisicoes' ? 'requisicoes_material' : m]?.[a] === true;
   const master = () => vinculo()?.papelServidor === 'master';
   const gravacao = () => W.gravacaoHabilitadaWork?.() === true;
   const reais = c => (Number(c) / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -179,6 +180,7 @@
     if (aba === 'requisicoes') return carregarRequisicoes();
     if (aba === 'usuarios') return carregarUsuarios();
     if (aba === 'gastos_obra') return carregarGastosObra();
+    if (aba === 'backup') return carregarBackup();
     const linhas = await listarTodos(aba);
     registros = new Map(linhas.map(r => [r.id, r]));
     desenhar();
@@ -712,6 +714,61 @@
     corpo.replaceChildren(el('section', { classe: 'cs-form' }, el('h3', { texto: 'Gastos da obra' }), el('div', { classe: 'cs-acoes' }, obra)), saida);
     mensagem('Gastos da obra: escolha a obra.');
   }
+  // ---------- Backup e restauração (v13): somente Master ----------
+  async function carregarBackup() {
+    const corpo = painel.querySelector('[data-cs=corpo]');
+    const erroExp = el('p', { classe: 'cs-erro', role: 'alert' }), erroRes = el('p', { classe: 'cs-erro', role: 'alert' });
+    const nomeArquivo = () => {
+      const h = new Date(), d = h.getFullYear() + '-' + String(h.getMonth() + 1).padStart(2, '0') + '-' + String(h.getDate()).padStart(2, '0');
+      const emp = String(vinculo()?.nomeEmpresa || 'empresa').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40);
+      return 'backup-martins-' + emp + '-' + d + '.json';
+    };
+    const baixar = el('button', { type: 'button', id: 'bk-exportar', classe: 'cs-primario', texto: 'Gerar e baixar backup', disabled: !gravacao(), onclick: async () => {
+      baixar.disabled = true; erroExp.textContent = '';
+      try {
+        const arq = await W.MartinsProducaoRpc.backupExportar(empresa);
+        const blob = new Blob([JSON.stringify(arq)], { type: 'application/json' }), url = URL.createObjectURL(blob);
+        const a = el('a', { href: url, download: nomeArquivo() }); D.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 15000);
+        mensagem('Backup gerado: ' + arq.total + ' registro(s). Guarde o arquivo em local seguro.');
+      } catch (e) { erroExp.textContent = traduzir(e); } finally { baixar.disabled = !gravacao(); }
+    } });
+    const resumo = el('div', { 'data-bk': 'resumo' });
+    const arquivo = el('input', { id: 'bk-arquivo', type: 'file', accept: '.json,application/json', 'aria-label': 'Arquivo de backup' });
+    const confirma = el('input', { id: 'bk-confirma', type: 'checkbox' });
+    let carregado = null, opRestauro = null;
+    const restaurar = el('button', { type: 'button', id: 'bk-restaurar', classe: 'cs-perigo', texto: 'Restaurar nesta empresa', disabled: true, onclick: async () => {
+      erroRes.textContent = '';
+      if (!carregado) return;
+      if (!confirma.checked) { erroRes.textContent = 'Marque a confirmação antes de restaurar.'; return; }
+      restaurar.disabled = true;
+      try {
+        const r = await W.MartinsProducaoRpc.backupImportar({ e: empresa, op: opRestauro, backup: carregado });
+        mensagem('Restauração concluída: ' + r.total + ' registro(s) restaurado(s) nesta empresa. Recarregue as telas para vê-los.');
+        carregado = null; resumo.replaceChildren(el('p', { classe: 'cs-aviso', texto: 'Restauração concluída (' + r.total + ' registros).' }));
+      } catch (e) { erroRes.textContent = traduzir(e); restaurar.disabled = !gravacao(); }
+    } });
+    arquivo.addEventListener('change', async () => {
+      erroRes.textContent = ''; carregado = null; restaurar.disabled = true; resumo.replaceChildren();
+      const f = arquivo.files?.[0]; if (!f) return;
+      try {
+        if (f.size > 40 * 1024 * 1024) throw Error('Arquivo grande demais (limite de 40 MB).');
+        const b = JSON.parse(await f.text());
+        if (b?.formato !== 'martins-backup' || b?.versao_formato !== 1 || !Array.isArray(b.registros)) throw Error('Este arquivo não é um backup do Sistema Martins.');
+        carregado = b; opRestauro = crypto.randomUUID();
+        resumo.replaceChildren(el('p', { texto: 'Backup gerado em ' + new Date(b.gerado_em).toLocaleString('pt-BR') + ' · ' + b.total + ' registro(s) · checksum ' + String(b.checksum).slice(0, 8) + '…' }),
+          el('ul', {}, Object.entries(b.por_modulo || {}).map(([m, n]) => el('li', { texto: (ROTULO_MOD[m] || m) + ': ' + n }))));
+        restaurar.disabled = !gravacao();
+      } catch (e) { erroRes.textContent = e instanceof SyntaxError ? 'O arquivo não é um JSON válido.' : (e.message || 'Não foi possível ler o arquivo.'); }
+    });
+    corpo.replaceChildren(
+      el('section', { classe: 'cs-form' }, el('h3', { texto: 'Exportar backup da empresa' }), el('div', { classe: 'cs-acoes' }, baixar), erroExp,
+        el('p', { classe: 'cs-aviso', texto: 'O arquivo reúne todos os cadastros e lançamentos desta empresa (inclusive despesas confidenciais) e tem dados pessoais, como CPF e salários. Guarde em local seguro, não envie por e-mail nem publique. É uma cópia lógica extra: não substitui os backups do próprio Supabase.' })),
+      el('section', { classe: 'cs-form' }, el('h3', { texto: 'Restaurar a partir de um backup' }), el('div', { classe: 'cs-acoes' }, arquivo), resumo,
+        el('label', { classe: 'cs-campo cs-check' }, confirma, el('span', { texto: 'Entendo que a restauração só funciona em empresa vazia, é tudo ou nada e não pode ser desfeita por esta tela.' })),
+        el('div', { classe: 'cs-acoes' }, restaurar), erroRes,
+        el('p', { classe: 'cs-aviso', texto: 'A restauração confere o formato, a quantidade de registros e o checksum. Se a empresa já tiver dados, nada é alterado. Não restaura o histórico de auditoria nem as permissões dos usuários.' })));
+    mensagem('Backup e restauração: somente Master.');
+  }
   async function mostrarHistorico(reg) {
     const corpo = painel.querySelector('[data-cs=corpo]');
     const voltar = el('button', { type: 'button', classe: 'cs-secundario', texto: '← Voltar à lista', onclick: () => desenhar() });
@@ -854,8 +911,8 @@
     if (!painel) montar();
     painel.hidden = false; D.body.classList.add('cs-aberto');
     try { await sincronizarSessao(); painel.querySelector('[data-cs=empresa]').textContent = (vinculo()?.nomeEmpresa || '') + (master() ? ' · Master' : '') + (gravacao() ? '' : ' · somente leitura'); if (MODULOS[inicial] && pode(inicial, 'ler')) aba = inicial; desenharAbas(); if (aba) await carregarAba();
-      if (preenchimento && !['estoque', 'compras', 'requisicoes', 'usuarios', 'gastos_obra'].includes(inicial) && aba !== inicial) { mensagem('O cadastro de ' + (MODULOS[inicial]?.titulo || inicial).toLowerCase() + ' ainda não está liberado para o seu vínculo nesta empresa (ou o módulo não foi habilitado no servidor). Nada foi gravado no navegador.', true); return; }
-      if (preenchimento && !['estoque', 'compras', 'requisicoes', 'usuarios', 'gastos_obra'].includes(inicial) && aba === inicial) {
+      if (preenchimento && !['estoque', 'compras', 'requisicoes', 'usuarios', 'gastos_obra', 'backup'].includes(inicial) && aba !== inicial) { mensagem('O cadastro de ' + (MODULOS[inicial]?.titulo || inicial).toLowerCase() + ' ainda não está liberado para o seu vínculo nesta empresa (ou o módulo não foi habilitado no servidor). Nada foi gravado no navegador.', true); return; }
+      if (preenchimento && !['estoque', 'compras', 'requisicoes', 'usuarios', 'gastos_obra', 'backup'].includes(inicial) && aba === inicial) {
         if (!pode(aba, 'criar')) { mensagem('Seu vínculo não tem permissão para cadastrar ' + MODULOS[aba].titulo.toLowerCase() + '. Peça a liberação ao Master.', true); return; }
         abrirFormulario(null, preenchimento);
         mensagem('Este cadastro agora é gravado no servidor e compartilhado com a equipe. Confira os dados trazidos do formulário e clique em Salvar.');

@@ -29,7 +29,7 @@ async function banco() {
     CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$ SELECT nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;`);
   await db.exec(sql('supabase/producao/base/estrutura_anterior_as_migracoes.sql'));
   await db.exec(`INSERT INTO public.martins_empresas(id, razao_social) VALUES ('${E}', 'Construtora Martins - cadastro inicial');`);
-  for (const d of ['supabase/producao/migrations', 'supabase/v2/migrations', 'supabase/v3/migrations', 'supabase/v4/migrations', 'supabase/v5/migrations', 'supabase/v6/migrations', 'supabase/v7/migrations', 'supabase/v8/migrations', 'supabase/v9/migrations', 'supabase/v10/migrations', 'supabase/v11/migrations', 'supabase/v12/migrations'])
+  for (const d of ['supabase/producao/migrations', 'supabase/v2/migrations', 'supabase/v3/migrations', 'supabase/v4/migrations', 'supabase/v5/migrations', 'supabase/v6/migrations', 'supabase/v7/migrations', 'supabase/v8/migrations', 'supabase/v9/migrations', 'supabase/v10/migrations', 'supabase/v11/migrations', 'supabase/v12/migrations', 'supabase/v13/migrations'])
     for (const f of fs.readdirSync(path.join(raiz, d)).sort()) await db.exec(sql(d + '/' + f));
   const [M, L] = Object.values(USUARIOS);
   await db.exec(`INSERT INTO auth.users VALUES ('${M}','master@teste.invalid'),('${L}','lancador@teste.invalid');
@@ -39,7 +39,7 @@ async function banco() {
   return db;
 }
 
-const TIPOS = { e: 'uuid', r: 'uuid', apos: 'uuid', op: 'uuid', v: 'bigint', limite: 'integer', d: 'jsonb', itens: 'jsonb', de: 'date', ate: 'date', m: 'text', estado: 'text', motivo: 'text', tipo: 'text', produto: 'uuid', origem: 'uuid', requisicao: 'uuid', recebimento: 'uuid', usuario: 'uuid', ativo: 'boolean', email: 'text', nome: 'text', conta: 'uuid', valor: 'bigint', data: 'date', conta_bancaria: 'uuid', obs: 'text', baixa: 'uuid', destino: 'uuid', qtd: 'bigint', ref: 'uuid', pedido: 'uuid', deposito: 'uuid', documento: 'jsonb', obra: 'uuid', rdo: 'uuid', consumo: 'uuid' };
+const TIPOS = { e: 'uuid', r: 'uuid', apos: 'uuid', op: 'uuid', v: 'bigint', limite: 'integer', d: 'jsonb', itens: 'jsonb', de: 'date', ate: 'date', m: 'text', estado: 'text', motivo: 'text', tipo: 'text', produto: 'uuid', origem: 'uuid', requisicao: 'uuid', recebimento: 'uuid', backup: 'jsonb', usuario: 'uuid', ativo: 'boolean', email: 'text', nome: 'text', conta: 'uuid', valor: 'bigint', data: 'date', conta_bancaria: 'uuid', obs: 'text', baixa: 'uuid', destino: 'uuid', qtd: 'bigint', ref: 'uuid', pedido: 'uuid', deposito: 'uuid', documento: 'jsonb', obra: 'uuid', rdo: 'uuid', consumo: 'uuid' };
 async function supabase(db, route) {
   const req = route.request(), url = new URL(req.url());
   const json = (status, body) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
@@ -684,6 +684,34 @@ async function novo(page, campos) {
     // A: consumo líquido 4,5 un (2 − 0,5 do RDO + 3 da requisição) × custo médio R$ 5,00 (compra de 10 a R$ 5,00)
     check(await pm2.$eval('[data-go=saida]', n => /4,5/.test(n.textContent) && /5,00/.test(n.textContent) && /22,50/.test(n.textContent)), 'a tela mostra o consumo líquido de A (4,5 un), o custo médio (R$ 5,00) e o custo (R$ 22,50)');
     check(await pm2.$eval('[data-go=resumo]', n => /Total apropriado à obra/.test(n.textContent)), 'o resumo traz o total apropriado à obra, calculado no servidor');
+    await pm2.evaluate(() => window.MartinsCadastrosServidor.fechar());
+
+    console.log('Backup e restauração (v13)');
+    await pm2.evaluate(() => window.MartinsCadastrosServidor.abrir('backup'));
+    await pm2.waitForSelector('#bk-exportar', { timeout: 15000 });
+    const [dl] = await Promise.all([pm2.waitForEvent('download'), pm2.click('#bk-exportar')]);
+    const arqPath = await dl.path(); const bkp = JSON.parse(fs.readFileSync(arqPath, 'utf8'));
+    const totalReg = Number((await db.query(`SELECT count(*)::int n FROM martins_producao_v1.registros WHERE empresa_id=$1`, [E])).rows[0].n);
+    check(/^backup-martins-.*\.json$/.test(dl.suggestedFilename()) && bkp.formato === 'martins-backup' && bkp.total === totalReg && bkp.registros.length === totalReg, 'o Master baixa um arquivo de backup com todos os registros da empresa (' + totalReg + ')');
+    check(bkp.registros.some(r => r.modulo === 'estoque_movimentos') && bkp.registros.some(r => r.modulo === 'contas_receber'), 'o backup inclui os módulos novos (estoque, contas a receber…)');
+    check((await db.query(`SELECT count(*)::int n FROM martins_producao_v1.auditoria WHERE modulo='backup' AND depois->>'acao'='exportar'`)).rows[0].n === 1, 'a exportação ficou na auditoria');
+    await pm2.setInputFiles('#bk-arquivo', arqPath);
+    await pm2.waitForSelector('[data-bk=resumo] li');
+    check(await pm2.$eval('[data-bk=resumo]', n => /registro\(s\)/.test(n.textContent) && /Clientes: /.test(n.textContent)), 'ao escolher o arquivo, a tela mostra o resumo por módulo antes de restaurar');
+    await pm2.click('#bk-restaurar');
+    await pm2.waitForFunction(() => /Marque a confirmação/.test(document.querySelector('#cs-painel .cs-erro:not(:empty)')?.textContent || ''));
+    await pm2.check('#bk-confirma'); await pm2.click('#bk-restaurar');
+    await pm2.waitForFunction(() => [...document.querySelectorAll('#cs-painel .cs-erro')].some(n => /já tem dados/.test(n.textContent)));
+    check((await db.query(`SELECT count(*)::int n FROM martins_producao_v1.registros WHERE empresa_id=$1`, [E])).rows[0].n === totalReg, 'restaurar numa empresa que já tem dados é recusado com mensagem clara e nada muda');
+    const adulterado = { ...bkp, registros: bkp.registros.slice(1) };
+    await pm2.setInputFiles('#bk-arquivo', { name: 'adulterado.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(adulterado)) });
+    await pm2.waitForSelector('[data-bk=resumo] li'); await pm2.click('#bk-restaurar');
+    await pm2.waitForFunction(() => [...document.querySelectorAll('#cs-painel .cs-erro')].some(n => /Backup incompleto|já tem dados/.test(n.textContent)));
+    check(true, 'backup com registro faltando não é aceito');
+    await pm2.setInputFiles('#bk-arquivo', { name: 'lixo.json', mimeType: 'application/json', buffer: Buffer.from('isto não é json') });
+    await pm2.waitForFunction(() => /não é um JSON válido/.test(document.querySelector('#cs-painel .cs-erro:not(:empty)')?.textContent || ''));
+    check(true, 'arquivo que não é JSON é recusado antes de qualquer envio');
+    check(await semRastroLocal(pm2, 'martins-backup').then(x => x.length === 0), 'o backup não fica guardado no navegador (localStorage)');
     await pm2.evaluate(() => window.MartinsCadastrosServidor.fechar());
 
     console.log('Rodada 4: ficha, histórico, busca e mensagens');

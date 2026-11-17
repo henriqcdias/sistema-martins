@@ -209,3 +209,13 @@ Não foram tocadas porque não fazem parte do Manual de funções nem dos relat�
 - **Despesas diretas:** despesas da obra não canceladas, **sem as geradas por recebimento de compra** (o material delas entra pelo consumo; somar os dois contaria o mesmo gasto duas vezes). O valor dessas despesas excluídas aparece só como informação.
 - **Confidenciais:** só o Master as vê e soma; o Administrador não as vê nem sabe que existem (validado: nenhum valor vaza).
 - **Limite conhecido:** o custo médio é calculado na consulta, com os preços **de hoje**. Não congela o custo da data do consumo. Congelar exigiria gravar o custo em cada consumo e entrega (muda a v6 e a v8); fica como evolução, se o Grupo precisar de custo histórico fechado por competência.
+
+## Backup e restauração (v13, 17/11/2026)
+
+`supabase/v13`: aba **Backup e restauração**, exclusiva do **Master** (o servidor confere). É uma **cópia lógica extra, em JSON**; não substitui os backups do próprio Supabase.
+
+- **Exportar:** baixa um arquivo com todos os registros da empresa (todos os módulos, **inclusive despesas confidenciais**), contagem por módulo e checksum. A exportação fica na auditoria. **O arquivo tem dados pessoais (CPF, salários) e sigilosos:** guardar em local seguro, não enviar por e-mail nem publicar.
+- **Restaurar:** somente em **empresa vazia**; nunca sobrescreve nem mistura. Confere formato, quantidade e checksum de registros/revisões; **tudo ou nada**. Preserva ids, revisões e datas, reescreve o id da empresa dentro dos dados e, se o autor de um registro não existe mais, assume quem restaurou. O saldo de estoque volta junto (é derivado dos movimentos). Idempotente.
+- **Não restaura:** histórico de auditoria anterior, permissões dos usuários e as operações já processadas.
+- **Limite conhecido:** a restauração confia no conteúdo do arquivo (é do Master) e não repete as validações de cada módulo; o checksum protege contra arquivo incompleto ou com registros/revisões alterados, **não** contra edição manual de um valor dentro de `dados`. Tamanho: até 40 MB na tela e 200 mil registros.
+- **Teste de uso real:** exporte da homologação e restaure numa empresa vazia (por exemplo "QA FICTÍCIA — Aços") para provar o ciclo antes de depender dele. Em produção, só com autorização do Henrique.

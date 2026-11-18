@@ -74,6 +74,7 @@
     usuarios: { titulo: 'Usuários e permissões', colunas: [], campos: [] },
     gastos_obra: { titulo: 'Gastos da obra', colunas: [], campos: [] },
     relatorios_fin: { titulo: 'Relatórios financeiros', colunas: [], campos: [] },
+    extratos_bancarios: { titulo: 'Conciliação bancária', colunas: [], campos: [] },
     backup: { titulo: 'Backup e restauração', colunas: [], campos: [] },
     epis: { titulo: 'EPIs e uniformes', colunas: ['codigo', 'nome', 'tamanho', 'estoque_minimo'], campos: [
       ['nome', 'Descrição', 'texto', { obrigatorio: true }], ['codigo', 'Código de referência', 'texto'], ['categoria', 'Categoria', 'texto'],
@@ -184,6 +185,7 @@
     if (aba === 'usuarios') return carregarUsuarios();
     if (aba === 'gastos_obra') return carregarGastosObra();
     if (aba === 'relatorios_fin') return carregarRelatoriosFin();
+    if (aba === 'extratos_bancarios') return carregarConciliacao();
     if (aba === 'backup') return carregarBackup();
     const linhas = await listarTodos(aba);
     registros = new Map(linhas.map(r => [r.id, r]));
@@ -635,7 +637,7 @@
     clientes: 'Clientes', fornecedores: 'Fornecedores', vendedores: 'Vendedores', motoristas: 'Motoristas', veiculos: 'Veículos', produtos: 'Produtos e materiais', depositos: 'Depósitos',
     centros_custo: 'Centros de custo', contas_bancarias: 'Contas bancárias', despesas: 'Despesas (financeiro)', feriados: 'Feriados', precos_insumo: 'Preços de insumos', epis: 'EPIs e uniformes',
     estoque_movimentos: 'Estoque (movimentações)', pedidos_compra: 'Pedidos de compra', recebimentos_compra: 'Recebimentos de compra', frota_eventos: 'Frota (abastecimento e manutenção)',
-    ausencias: 'Ausências e férias', cotacoes: 'Propostas de cotação', requisicoes_material: 'Requisições de material', contas_receber: 'Contas a receber (vendas)', pedidos_venda: 'Pedidos de venda' };
+    ausencias: 'Ausências e férias', cotacoes: 'Propostas de cotação', requisicoes_material: 'Requisições de material', contas_receber: 'Contas a receber (vendas)', pedidos_venda: 'Pedidos de venda', extratos_bancarios: 'Extrato bancário (conciliação)' };
   // Modelos são só um atalho: preenchem a tela, o Master confere e salva. l = ver, c = criar, e = editar.
   const MODELOS = {
     'Almoxarife': { estoque_movimentos: 'lce', epis: 'lce', produtos: 'l', depositos: 'l', pedidos_compra: 'l', recebimentos_compra: 'l', requisicoes_material: 'l', obras: 'l', rdos: 'l' },
@@ -644,6 +646,7 @@
     'RH / Departamento pessoal': { funcionarios: 'lce', frequencia: 'lce', ausencias: 'lce', epis: 'lce', feriados: 'lce', obras: 'l', rdos: 'l' },
     'Comercial / Vendedor': { clientes: 'lce', vendedores: 'l', orcamentos: 'lce', obras: 'l', contas_receber: 'l', pedidos_venda: 'l' },
     'Financeiro (contas a receber)': { contas_receber: 'lce', clientes: 'l', contas_bancarias: 'l', obras: 'l', orcamentos: 'l' },
+    'Financeiro (conciliação bancária)': { extratos_bancarios: 'lce', contas_receber: 'l', despesas: 'l', contas_bancarias: 'l' },
     'Lançador financeiro': { despesas: 'lc', fornecedores: 'l', centros_custo: 'l', contas_bancarias: 'l', obras: 'l' },
     'Compras': { pedidos_compra: 'lce', fornecedores: 'lce', cotacoes: 'lce', produtos: 'l', precos_insumo: 'lce', centros_custo: 'l', obras: 'l' },
     'Somente leitura (sem financeiro)': Object.fromEntries(Object.keys(ROTULO_MOD).filter(m => !['despesas', 'contas_bancarias'].includes(m)).map(m => [m, 'l'])),
@@ -758,6 +761,139 @@
     };
     corpo.replaceChildren(el('section', { classe: 'cs-form' }, el('h3', { texto: 'Relatórios financeiros' }), el('div', { classe: 'cs-acoes' }, el('label', { texto: 'De ' }, de), el('label', { texto: 'Até ' }, ate), el('button', { type: 'button', id: 'rf-gerar', classe: 'cs-primario', texto: 'Gerar', onclick: gerar }))), saida);
     mensagem('Relatórios financeiros: escolha o período.');
+  }
+  // ---------- Conciliação bancária (v16): importar extrato OFX/CSV e ligar cada linha a um recebimento ou despesa ----------
+  const centavosDe = s => {
+    let t = String(s ?? '').trim(); if (!t) return null;
+    let neg = /^\(.*\)$/.test(t) || /^-/.test(t) || /-$/.test(t) || /\bD\b$/i.test(t);
+    t = t.replace(/[^0-9.,]/g, '');
+    if (!/\d/.test(t)) return null;
+    const ult = Math.max(t.lastIndexOf(','), t.lastIndexOf('.'));
+    let inteiro = t, frac = '';
+    if (ult >= 0) {
+      const depois = t.slice(ult + 1);
+      if (depois.length <= 2) { inteiro = t.slice(0, ult); frac = depois; }
+    }
+    inteiro = inteiro.replace(/[.,]/g, '');
+    const v = Number(inteiro || '0') * 100 + Number((frac + '00').slice(0, 2));
+    return Number.isSafeInteger(v) ? (neg ? -v : v) : null;
+  };
+  const dataDe = s => {
+    const t = String(s ?? '').trim(); let m;
+    if ((m = t.match(/^(\d{4})(\d{2})(\d{2})/))) return m[1] + '-' + m[2] + '-' + m[3];
+    if ((m = t.match(/^(\d{4})-(\d{2})-(\d{2})/))) return m[1] + '-' + m[2] + '-' + m[3];
+    if ((m = t.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{2,4})/))) return (m[3].length === 2 ? '20' + m[3] : m[3]) + '-' + m[2].padStart(2, '0') + '-' + m[1].padStart(2, '0');
+    return null;
+  };
+  function lerOfx(texto) {
+    const blocos = String(texto).split(/<STMTTRN>/i).slice(1), linhas = [], erros = [];
+    const tag = (b, n) => { const m = b.match(new RegExp('<' + n + '>([^<\\r\\n]*)', 'i')); return m ? m[1].trim() : ''; };
+    blocos.forEach((b, i) => {
+      const data = dataDe(tag(b, 'DTPOSTED')), valor = centavosDe(tag(b, 'TRNAMT'));
+      const descricao = [tag(b, 'NAME'), tag(b, 'MEMO')].filter(Boolean).filter((x, k, a) => a.indexOf(x) === k).join(' - ').slice(0, 300);
+      if (!data || valor === null || valor === 0) { erros.push('Transação ' + (i + 1) + ' sem data ou valor válido'); return; }
+      linhas.push({ data, valor_centavos: valor, descricao, fitid: tag(b, 'FITID').slice(0, 100) || undefined });
+    });
+    return { linhas, erros };
+  }
+  function lerCsv(texto) {
+    const linhasBrutas = String(texto).replace(/^﻿/, '').split(/\r?\n/).filter(l => l.trim());
+    if (linhasBrutas.length < 2) return { linhas: [], erros: ['O arquivo CSV precisa de um cabeçalho e ao menos uma linha.'] };
+    const cab0 = linhasBrutas[0], sep = [';', '\t', ','].map(s => [s, cab0.split(s).length]).sort((a, b) => b[1] - a[1])[0][0];
+    const partir = l => { const out = []; let cur = '', asp = false; for (const ch of l) { if (ch === '"') asp = !asp; else if (ch === sep && !asp) { out.push(cur); cur = ''; } else cur += ch; } out.push(cur); return out.map(x => x.trim()); };
+    const norm = s => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+    const cab = partir(cab0).map(norm);
+    const col = re => cab.findIndex(c => re.test(c));
+    const iData = col(/^(data|date|dt)/), iDesc = col(/(descri|historico|memo|lancamento|detalhe)/), iVal = col(/^(valor|amount|value|montante)/), iDeb = col(/(debito|saida)/), iCre = col(/(credito|entrada)/), iId = col(/^(id|fitid|documento|doc|identificador)/);
+    if (iData < 0 || (iVal < 0 && iDeb < 0 && iCre < 0)) return { linhas: [], erros: ['Não reconheci as colunas. O cabeçalho precisa ter Data, Descrição e Valor (ou Débito/Crédito).'] };
+    const linhas = [], erros = [];
+    linhasBrutas.slice(1).forEach((l, i) => {
+      const c = partir(l), data = dataDe(c[iData]);
+      let valor = iVal >= 0 ? centavosDe(c[iVal]) : null;
+      if (valor === null && (iDeb >= 0 || iCre >= 0)) { const d = iDeb >= 0 ? centavosDe(c[iDeb]) : null, cr = iCre >= 0 ? centavosDe(c[iCre]) : null; valor = cr ? Math.abs(cr) : d ? -Math.abs(d) : null; }
+      if (!data || valor === null || valor === 0) { erros.push('Linha ' + (i + 2) + ' sem data ou valor válido'); return; }
+      linhas.push({ data, valor_centavos: valor, descricao: (iDesc >= 0 ? c[iDesc] : '').slice(0, 300), fitid: iId >= 0 && c[iId] ? c[iId].slice(0, 100) : undefined });
+    });
+    return { linhas, erros };
+  }
+  const dataBr = iso => { const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? m[3] + '/' + m[2] + '/' + m[1] : ''; };
+  async function carregarConciliacao() {
+    const corpo = painel.querySelector('[data-cs=corpo]');
+    const [contas, extratos, titulos, despesas] = await Promise.all([listarTodos('contas_bancarias').catch(() => []), listarTodos('extratos_bancarios'),
+      pode('contas_receber', 'ler') ? listarTodos('contas_receber').catch(() => []) : [], pode('despesas', 'ler') ? listarTodos('despesas').catch(() => []) : []]);
+    const contasAtivas = contas.filter(c => c.dados.ativo !== false);
+    const nomeConta = id => contas.find(c => c.id === id)?.dados.nome || '—';
+    const conta = el('select', { id: 'cb-conta', 'aria-label': 'Conta bancária' }); conta.add(new Option('Conta bancária…', '')); for (const c of contasAtivas) conta.add(new Option(c.dados.nome || c.id, c.id));
+    if (contasAtivas.length === 1) conta.value = contasAtivas[0].id;
+    const arquivo = el('input', { type: 'file', id: 'cb-arquivo', accept: '.ofx,.csv,.txt', 'aria-label': 'Arquivo de extrato' });
+    const aviso = el('p', { classe: 'cs-aviso', texto: 'Importe o extrato do banco (OFX ou CSV com cabeçalho Data, Descrição e Valor). Reimportar o mesmo arquivo, ou outro que o sobreponha, não duplica linhas. Entradas se ligam a recebimentos registrados; saídas, a despesas pagas.' });
+    const previa = el('div', { 'data-cb': 'previa' }), erro = el('p', { classe: 'cs-erro', role: 'alert' });
+    let lido = null;
+    arquivo.addEventListener('change', async () => {
+      erro.textContent = ''; previa.replaceChildren(); lido = null;
+      const f = arquivo.files?.[0]; if (!f) return;
+      if (f.size > 5 * 1024 * 1024) { erro.textContent = 'Arquivo grande demais (máximo 5 MB).'; return; }
+      const texto = await f.text(), ofx = /\.ofx$/i.test(f.name) || /<OFX>|<STMTTRN>/i.test(texto);
+      const r = ofx ? lerOfx(texto) : lerCsv(texto); lido = { ...r, origem: ofx ? 'ofx' : 'csv' };
+      if (!r.linhas.length) { erro.textContent = r.erros[0] || 'Nenhuma transação encontrada no arquivo.'; return; }
+      const ent = r.linhas.filter(l => l.valor_centavos > 0).reduce((s, l) => s + l.valor_centavos, 0), sai = r.linhas.filter(l => l.valor_centavos < 0).reduce((s, l) => s + l.valor_centavos, 0);
+      previa.replaceChildren(el('div', { classe: 'cs-totais' }, el('div', { texto: r.linhas.length + ' transação(ões) lida(s) de ' + f.name + ' (' + lido.origem.toUpperCase() + ')' }), el('div', { texto: 'Entradas: ' + reais(ent) + ' · Saídas: ' + reais(-sai) }),
+        r.erros.length ? el('div', { classe: 'cs-erro', texto: r.erros.length + ' linha(s) ignorada(s): ' + r.erros.slice(0, 3).join('; ') + (r.erros.length > 3 ? '…' : '') }) : null),
+        el('div', { classe: 'cs-rolagem' }, el('table', { classe: 'cs-tabela' }, el('thead', {}, el('tr', {}, ['Data', 'Descrição', 'Valor'].map(x => el('th', { texto: x })))),
+          el('tbody', {}, r.linhas.slice(0, 8).map(l => el('tr', {}, el('td', { 'data-rotulo': 'Data', texto: dataBr(l.data) }), el('td', { 'data-rotulo': 'Descrição', texto: l.descricao }), el('td', { 'data-rotulo': 'Valor', texto: reais(l.valor_centavos) })))))),
+        r.linhas.length > 8 ? el('p', { classe: 'cs-aviso', texto: 'Mostrando 8 de ' + r.linhas.length + ' linhas.' }) : null);
+    });
+    const importar = el('button', { type: 'button', id: 'cb-importar', classe: 'cs-primario', texto: 'Importar para o servidor', disabled: !gravacao() || !pode('extratos_bancarios', 'criar'), onclick: async () => {
+      erro.textContent = '';
+      if (!conta.value) { erro.textContent = 'Escolha a conta bancária do extrato.'; return; }
+      if (!lido?.linhas.length) { erro.textContent = 'Escolha um arquivo de extrato válido.'; return; }
+      importar.disabled = true; let ins = 0, ign = 0;
+      try {
+        for (let i = 0; i < lido.linhas.length; i += 2000) { const r = await W.MartinsProducaoRpc.extratoImportar({ e: empresa, op: crypto.randomUUID(), conta: conta.value, formato: lido.origem, linhas: lido.linhas.slice(i, i + 2000) }); ins += r.inseridas; ign += r.ignoradas; }
+        await carregarAba(); mensagem('Extrato importado: ' + ins + ' linha(s) nova(s)' + (ign ? ', ' + ign + ' já existiam e foram ignoradas' : '') + '.');
+      } catch (e) { erro.textContent = traduzir(e); importar.disabled = !gravacao(); }
+    } });
+    // Lançamentos já ligados (um lançamento só pode estar em uma linha)
+    const ligados = new Set(extratos.map(x => x.dados.alvo_chave).filter(Boolean));
+    const diasEntre = (a, b) => Math.abs((Date.parse(a + 'T12:00:00Z') - Date.parse(b + 'T12:00:00Z')) / 86400000);
+    const sugestoes = r => {
+      const v = Number(r.dados.valor_centavos), dt = r.dados.data, out = [];
+      if (v > 0) { for (const t of titulos) for (const b of t.dados.baixas || []) if (!b.estornada && Number(b.valor_centavos) === v && !ligados.has('baixa:' + b.id)) out.push({ tipo: 'baixa', alvo: t.id, baixa: b.id, dias: diasEntre(dt, b.data), rotulo: 'Recebimento ' + dataBr(b.data) + ' · ' + (t.dados.cliente_nome || t.dados.descricao || 'título') + ' · ' + reais(v) }); }
+      else { for (const d of despesas) { if (!['pago', 'confirmado', 'conciliado'].includes(d.dados.estado) || Number(d.dados.valor_centavos) !== -v || ligados.has('despesa:' + d.id) || (d.dados.confidencial && !master())) continue;
+        out.push({ tipo: 'despesa', alvo: d.id, baixa: null, dias: diasEntre(dt, d.dados.vencimento || d.dados.competencia || dt), rotulo: 'Despesa · ' + (d.dados.descricao || '—') + ' · venc. ' + dataBr(d.dados.vencimento || d.dados.competencia) + ' · ' + reais(-v) }); } }
+      return out.sort((a, b) => a.dias - b.dias).slice(0, 12);
+    };
+    const filtro = el('select', { id: 'cb-filtro', 'aria-label': 'Situação' }); for (const [v, t] of [['pendente', 'Pendentes'], ['conciliada', 'Conciliadas'], ['', 'Todas']]) filtro.add(new Option(t, v));
+    const filtroConta = el('select', { id: 'cb-filtro-conta', 'aria-label': 'Conta' }); filtroConta.add(new Option('Todas as contas', '')); for (const c of contas) filtroConta.add(new Option(c.dados.nome || c.id, c.id));
+    const lista = el('div', { 'data-cb': 'lista' }), erroLista = el('p', { classe: 'cs-erro', role: 'alert' });
+    const rodarCb = async (fn, ok) => { erroLista.textContent = ''; try { await fn(); await carregarAba(); mensagem(ok); } catch (e) { erroLista.textContent = traduzir(e); } };
+    const desenhar = () => {
+      const linhas = extratos.filter(x => (!filtro.value || (x.dados.situacao || 'pendente') === filtro.value) && (!filtroConta.value || x.dados.conta_bancaria_id === filtroConta.value))
+        .sort((a, b) => String(b.dados.data).localeCompare(String(a.dados.data)) || String(a.id).localeCompare(String(b.id)));
+      const pend = extratos.filter(x => (x.dados.situacao || 'pendente') === 'pendente').length;
+      lista.replaceChildren(el('p', { classe: 'cs-aviso', 'data-cb': 'contagem', texto: extratos.length + ' linha(s) no servidor: ' + pend + ' pendente(s) e ' + (extratos.length - pend) + ' conciliada(s). Exibindo ' + linhas.length + '.' }),
+        el('div', { classe: 'cs-rolagem' }, el('table', { classe: 'cs-tabela' }, el('thead', {}, el('tr', {}, ['Data', 'Conta', 'Descrição', 'Valor', 'Situação', 'Conciliar com'].map(x => el('th', { texto: x })))),
+          el('tbody', {}, linhas.length ? linhas.slice(0, 300).map(r => {
+            const conc = r.dados.situacao === 'conciliada'; let acao;
+            if (conc) {
+              acao = el('span', {}, el('span', { texto: (r.dados.conciliacao?.tipo === 'baixa' ? 'Recebimento' : 'Despesa') + ' · ' }), pode('extratos_bancarios', 'editar') ? el('button', { type: 'button', classe: 'cs-secundario', 'data-cb': 'desfazer', texto: 'Desfazer', disabled: !gravacao(), onclick: () => {
+                const m = prompt('Motivo para desfazer a conciliação:'); if (!m || !m.trim()) return; rodarCb(() => W.MartinsProducaoRpc.extratoDesconciliar({ e: empresa, op: crypto.randomUUID(), linha: r.id, v: r.revisao, motivo: m.trim() }), 'Conciliação desfeita.'); } }) : null);
+            } else if (pode('extratos_bancarios', 'editar')) {
+              const sug = sugestoes(r);
+              if (!sug.length) acao = el('span', { classe: 'cs-vazio', texto: 'Sem lançamento de mesmo valor' });
+              else { const s = el('select', { 'aria-label': 'Lançamento' }); sug.forEach((x, i) => s.add(new Option(x.rotulo, String(i))));
+                acao = el('span', {}, s, el('button', { type: 'button', classe: 'cs-primario', 'data-cb': 'conciliar', texto: 'Conciliar', disabled: !gravacao(), onclick: () => { const x = sug[Number(s.value)]; rodarCb(() => W.MartinsProducaoRpc.extratoConciliar({ e: empresa, op: crypto.randomUUID(), linha: r.id, v: r.revisao, tipo: x.tipo, alvo: x.alvo, baixa: x.baixa }), 'Linha conciliada.'); } })); }
+            } else acao = el('span', { texto: '—' });
+            return el('tr', {}, el('td', { 'data-rotulo': 'Data', texto: dataBr(r.dados.data) }), el('td', { 'data-rotulo': 'Conta', texto: nomeConta(r.dados.conta_bancaria_id) }), el('td', { 'data-rotulo': 'Descrição', texto: r.dados.descricao || '' }),
+              el('td', { 'data-rotulo': 'Valor', texto: reais(r.dados.valor_centavos) }), el('td', { 'data-rotulo': 'Situação', texto: conc ? 'Conciliada' : 'Pendente' }), el('td', { 'data-rotulo': 'Conciliar com' }, acao));
+          }) : [el('tr', {}, el('td', { colspan: 6, classe: 'cs-vazio', texto: 'Nenhuma linha neste filtro.' }))]))),
+        linhas.length > 300 ? el('p', { classe: 'cs-aviso', texto: 'Mostrando as 300 primeiras de ' + linhas.length + '; use os filtros para ver as demais.' }) : null);
+    };
+    filtro.addEventListener('change', desenhar); filtroConta.addEventListener('change', desenhar);
+    corpo.replaceChildren(
+      pode('extratos_bancarios', 'criar') ? el('section', { classe: 'cs-form' }, el('h3', { texto: 'Importar extrato' }), aviso, el('div', { classe: 'cs-acoes' }, conta, arquivo, importar), erro, previa) : el('p', { classe: 'cs-aviso', texto: 'Você pode consultar o extrato, mas não importar (sem permissão de criar).' }),
+      el('section', { classe: 'cs-form' }, el('h3', { texto: 'Linhas do extrato' }), el('div', { classe: 'cs-acoes' }, filtro, filtroConta), erroLista, lista));
+    desenhar(); mensagem('Conciliação bancária: importe um extrato ou concilie as linhas pendentes.');
   }
   // ---------- Backup e restauração (v13): somente Master ----------
   async function carregarBackup() {
@@ -956,8 +1092,8 @@
     if (!painel) montar();
     painel.hidden = false; D.body.classList.add('cs-aberto');
     try { await sincronizarSessao(); painel.querySelector('[data-cs=empresa]').textContent = (vinculo()?.nomeEmpresa || '') + (master() ? ' · Master' : '') + (gravacao() ? '' : ' · somente leitura'); if (MODULOS[inicial] && pode(inicial, 'ler')) aba = inicial; desenharAbas(); if (aba) await carregarAba();
-      if (preenchimento && !['estoque', 'compras', 'requisicoes', 'usuarios', 'gastos_obra', 'relatorios_fin', 'backup'].includes(inicial) && aba !== inicial) { mensagem('O cadastro de ' + (MODULOS[inicial]?.titulo || inicial).toLowerCase() + ' ainda não está liberado para o seu vínculo nesta empresa (ou o módulo não foi habilitado no servidor). Nada foi gravado no navegador.', true); return; }
-      if (preenchimento && !['estoque', 'compras', 'requisicoes', 'usuarios', 'gastos_obra', 'relatorios_fin', 'backup'].includes(inicial) && aba === inicial) {
+      if (preenchimento && !['estoque', 'compras', 'requisicoes', 'usuarios', 'gastos_obra', 'relatorios_fin', 'extratos_bancarios', 'backup'].includes(inicial) && aba !== inicial) { mensagem('O cadastro de ' + (MODULOS[inicial]?.titulo || inicial).toLowerCase() + ' ainda não está liberado para o seu vínculo nesta empresa (ou o módulo não foi habilitado no servidor). Nada foi gravado no navegador.', true); return; }
+      if (preenchimento && !['estoque', 'compras', 'requisicoes', 'usuarios', 'gastos_obra', 'relatorios_fin', 'extratos_bancarios', 'backup'].includes(inicial) && aba === inicial) {
         if (!pode(aba, 'criar')) { mensagem('Seu vínculo não tem permissão para cadastrar ' + MODULOS[aba].titulo.toLowerCase() + '. Peça a liberação ao Master.', true); return; }
         abrirFormulario(null, preenchimento);
         mensagem('Este cadastro agora é gravado no servidor e compartilhado com a equipe. Confira os dados trazidos do formulário e clique em Salvar.');
@@ -1045,7 +1181,8 @@
   const ATALHOS = [['despesas', 'Despesas', 'Lançar, conferir, aprovar, pagar e conciliar'], ['centros_custo', 'Centros de custo', 'Obra ou administrativo, sem texto livre'],
     ['contas_bancarias', 'Contas bancárias', 'Contas por empresa'], ['fornecedores', 'Fornecedores e beneficiários', 'CPF/CNPJ único por empresa'],
     ['contas_receber', 'Contas a receber', 'Títulos, recebimentos parciais e estorno'], ['gastos_obra', 'Gastos da obra', 'Material consumido + despesas diretas, por obra'],
-    ['relatorios_fin', 'Fluxo de caixa, DRE e DFC', 'Entradas, saídas, resultado por competência e caixa efetivo']];
+    ['relatorios_fin', 'Fluxo de caixa, DRE e DFC', 'Entradas, saídas, resultado por competência e caixa efetivo'],
+    ['extratos_bancarios', 'Conciliação bancária', 'Importar extrato OFX/CSV e ligar a recebimentos e despesas']];
   let resumoEmCurso = null;
   function montarFinanceiro() {
     const view = D.getElementById('view-financeiro');
@@ -1056,7 +1193,7 @@
       el('p', { texto: 'Dados gravados no servidor e compartilhados com a equipe autorizada da empresa ativa.' }),
       el('div', { classe: 'fin-resumo', 'data-fin': 'resumo' }),
       el('div', { classe: 'fin-atalhos', 'data-fin': 'atalhos' }),
-      el('p', { classe: 'fin-pendente', texto: 'Já no servidor: despesas, contas a receber (recebimentos e estornos), gastos por obra, fluxo de caixa, DRE e DFC (Master e Administrador). Ainda não ligado: conciliação por extrato (OFX/CSV).' }));
+      el('p', { classe: 'fin-pendente', texto: 'Já no servidor: despesas, contas a receber (recebimentos e estornos), gastos por obra, fluxo de caixa, DRE e DFC (Master e Administrador) e conciliação bancária por extrato (OFX/CSV).' }));
     view.prepend(sec);
     new MutationObserver(() => { if (!view.classList.contains('hidden') && view.offsetParent !== null) atualizarFinanceiro(); }).observe(view, { attributes: true, attributeFilter: ['class', 'style'] });
     if (view.offsetParent !== null) atualizarFinanceiro();
@@ -1189,7 +1326,7 @@
     try { Object.defineProperty(W, nome, { configurable: false, enumerable: true, get: () => bloqueio, set: () => {} }); } catch (_) { /* já protegido */ }
   }
 
-  W.MartinsCadastrosServidor = Object.freeze({ abrir, fechar, atualizarFinanceiro, modulos: ORDEM.slice() });
+  W.MartinsCadastrosServidor = Object.freeze({ abrir, fechar, atualizarFinanceiro, modulos: ORDEM.slice(), _extrato: { lerOfx, lerCsv, centavosDe, dataDe } });
   if (D.readyState === 'loading') D.addEventListener('DOMContentLoaded', instalarBotao); else instalarBotao();
   new MutationObserver(instalarBotao).observe(D.documentElement, { childList: true, subtree: true });
 })();

@@ -50,3 +50,7 @@ jobs:
         run: node supabase/v13/validar-v13.cjs .
       - name: Contratos v14 (fluxo do orçamento)
         run: node supabase/v14/validar-v14.cjs .
+      - name: Contratos v15 (parcelas, custo congelado, relatórios financeiros)
+        run: node supabase/v15/validar-v15.cjs .
+      - name: Contratos v16 (conciliação bancária)
+        run: node supabase/v16/validar-v16.cjs .

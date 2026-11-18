@@ -239,3 +239,21 @@ Reproduzidos na tela antiga (navegador real) e corrigidos. Causas encontradas:
 - **Orçamento (v14):** a lista de acompanhamento só era desenhada ao abrir (aparecia após F5); agora atualiza ao salvar. Clientes, vendedores, obras e empresa do formulário vêm do servidor (eram listas fixas); item inicial vazio (era uma telha de R$ 94 inventada). Número sequencial (ORC-0001), situação com histórico e **conversão em UM pedido de venda por orçamento** (aprovar e converter na tela antiga só mudavam uma cópia na memória).
 - **Financeiro:** provado em teste que uma despesa de obra lançada (R$ 1.234,56) aparece **uma só vez** em Gastos da Obra, com o mesmo valor, e continua igual após o F5. O aviso do que falta foi corrigido: **contas a receber já está no servidor**; faltam fluxo de caixa, DRE/DFC e conciliação por extrato (OFX/CSV).
 - **Ainda local (sem contrato):** frequência coletiva por turno, documentos do funcionário, equipes por obra, vales, folha/holerites, plano de férias detalhado.
+
+## Segundo relatório do Camilo — Financeiro, conversão, custo e painel (17/11/2026) — v15 e v16
+
+| # | Ponto do relatório | Solução | Onde |
+|---|---|---|---|
+| 1 | Frequência: totais 22 dias/176 h iguais nas 3 empresas | Totais calculados dos lançamentos da empresa, do funcionário e do período (o 22/176 vinha de constante no código antigo) | `formularios.js`, bundles |
+| 2 | Fluxo de caixa | `martins_producao_financeiro_relatorios(e,de,ate)`: entradas = baixas de contas a receber (não estornadas) na data do recebimento; saídas = despesas pagas na data do pagamento (data do evento "pago" na auditoria); previsto = saldo aberto por vencimento. Só Master/Administrador com leitura integral; confidenciais só Master | v15, aba "Fluxo de caixa, DRE e DFC" |
+| 3 | Conciliação bancária | Módulo `extratos_bancarios`; OFX/CSV lido no navegador e gravado por `extrato_importar` (chave FITID ou conta+data+valor+descrição+ocorrência, índice único: reimportar não duplica); `extrato_conciliar` liga a linha a UMA baixa (entrada) ou UMA despesa paga (saída), valor e sentido precisam bater, estorno não concilia, lançamento só liga a uma linha (índice único); `extrato_desconciliar` exige motivo; Master conciliando despesa "confirmada" a leva a "conciliado" | v16, aba "Conciliação bancária" |
+| 4 | Parcelas a receber na conversão | `orcamento_converter(..., parcelas, primeiro_vencimento, intervalo_dias)` cria o pedido e N títulos na mesma transação (soma exata, último absorve o centavo; índice único pedido+parcela; 0 = sem cobrança). A conversão repetida continua recusada | v15, diálogo da conversão |
+| 5 | Custo do material no dia do consumo | Consumo/entrega gravam `custo_unitario_centavos` (custo médio do momento); devolução usa o custo do consumo original; `obra_gastos` soma o custo gravado. Movimentos antigos, sem custo gravado, são estimados pelo custo médio atual e sinalizados (`estimado_milli`) | v15 |
+| 6 | DRE | Por competência (receitas = títulos a receber; despesas por competência, por classificação e por centro de custo) | v15 |
+| 7 | DFC | Caixa efetivo: recebimentos de clientes, pagamentos de obra e administrativos, caixa líquido | v15 |
+| 8 | Painel sem estoque/a receber | Cards "Estoque" (produtos com saldo), "A receber" (aberto, vencido) e "Recebido no mês" vindos do servidor | `painel-servidor.js` |
+| 9 | Data de nascimento sumindo | Campo gravado e relido na ficha | `formularios.js` |
+| 10 | Contadores do RH | Inativos não entram em CLT/efetivo; cada contador explicita o filtro | `formularios.js`, bundles |
+
+Validação: `supabase/v15/validar-v15.cjs` (35), `supabase/v16/validar-v16.cjs` (36), isolamento (71), e2e (223).
+Ordem de aplicação no SQL Editor: v14 → v15 → v16 (v15 exige v10; v16 exige v14). Limites conhecidos: a data de pagamento do fluxo de caixa vem do evento "pago" da auditoria (despesas pagas antes de existir esse histórico caem no vencimento/competência); a conciliação não é automática, o sistema sugere por valor e o usuário confirma.

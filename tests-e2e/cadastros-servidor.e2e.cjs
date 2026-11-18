@@ -29,7 +29,7 @@ async function banco() {
     CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$ SELECT nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;`);
   await db.exec(sql('supabase/producao/base/estrutura_anterior_as_migracoes.sql'));
   await db.exec(`INSERT INTO public.martins_empresas(id, razao_social) VALUES ('${E}', 'Construtora Martins - cadastro inicial');`);
-  for (const d of ['supabase/producao/migrations', 'supabase/v2/migrations', 'supabase/v3/migrations', 'supabase/v4/migrations', 'supabase/v5/migrations', 'supabase/v6/migrations', 'supabase/v7/migrations', 'supabase/v8/migrations', 'supabase/v9/migrations', 'supabase/v10/migrations', 'supabase/v11/migrations', 'supabase/v12/migrations', 'supabase/v13/migrations', 'supabase/v14/migrations'])
+  for (const d of ['supabase/producao/migrations', 'supabase/v2/migrations', 'supabase/v3/migrations', 'supabase/v4/migrations', 'supabase/v5/migrations', 'supabase/v6/migrations', 'supabase/v7/migrations', 'supabase/v8/migrations', 'supabase/v9/migrations', 'supabase/v10/migrations', 'supabase/v11/migrations', 'supabase/v12/migrations', 'supabase/v13/migrations', 'supabase/v14/migrations', 'supabase/v15/migrations'])
     for (const f of fs.readdirSync(path.join(raiz, d)).sort()) await db.exec(sql(d + '/' + f));
   const [M, L, MO] = Object.values(USUARIOS);
   await db.exec(`INSERT INTO auth.users VALUES ('${M}','master@teste.invalid'),('${L}','lancador@teste.invalid'),('${MO}','mestre@teste.invalid');
@@ -39,7 +39,7 @@ async function banco() {
   return db;
 }
 
-const TIPOS = { e: 'uuid', r: 'uuid', apos: 'uuid', op: 'uuid', v: 'bigint', limite: 'integer', d: 'jsonb', itens: 'jsonb', de: 'date', ate: 'date', m: 'text', estado: 'text', motivo: 'text', tipo: 'text', produto: 'uuid', origem: 'uuid', requisicao: 'uuid', recebimento: 'uuid', backup: 'jsonb', orcamento: 'uuid', aprovar_antes: 'boolean', usuario: 'uuid', ativo: 'boolean', email: 'text', nome: 'text', conta: 'uuid', valor: 'bigint', data: 'date', conta_bancaria: 'uuid', obs: 'text', baixa: 'uuid', destino: 'uuid', qtd: 'bigint', ref: 'uuid', pedido: 'uuid', deposito: 'uuid', documento: 'jsonb', obra: 'uuid', rdo: 'uuid', consumo: 'uuid' };
+const TIPOS = { e: 'uuid', r: 'uuid', apos: 'uuid', op: 'uuid', v: 'bigint', limite: 'integer', d: 'jsonb', itens: 'jsonb', de: 'date', ate: 'date', m: 'text', estado: 'text', motivo: 'text', tipo: 'text', produto: 'uuid', origem: 'uuid', requisicao: 'uuid', recebimento: 'uuid', backup: 'jsonb', orcamento: 'uuid', aprovar_antes: 'boolean', usuario: 'uuid', ativo: 'boolean', email: 'text', nome: 'text', conta: 'uuid', valor: 'bigint', data: 'date', conta_bancaria: 'uuid', obs: 'text', baixa: 'uuid', destino: 'uuid', qtd: 'bigint', ref: 'uuid', pedido: 'uuid', deposito: 'uuid', documento: 'jsonb', obra: 'uuid', rdo: 'uuid', consumo: 'uuid', parcelas: 'integer', primeiro_vencimento: 'date', intervalo_dias: 'integer' };
 async function supabase(db, route) {
   const req = route.request(), url = new URL(req.url());
   const json = (status, body) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
@@ -322,7 +322,7 @@ async function novo(page, campos) {
     await pm2.waitForFunction(() => { const sec = document.getElementById('financeiro-servidor'); return sec && sec.offsetParent !== null && sec.querySelectorAll('.fin-card').length === 3; }, null, { timeout: 15000 });
     if (process.env.E2E_PRINTS) await pm2.screenshot({ path: path.join(process.env.E2E_PRINTS, 'financeiro.png') });
     const fin = await pm2.evaluate(() => ({ atalhos: [...document.querySelectorAll('#financeiro-servidor .fin-atalho b')].map(n => n.textContent), pend: document.querySelector('#financeiro-servidor .fin-card strong').textContent, vazio: getComputedStyle(document.getElementById('financeiro-servidor')).display }));
-    check(fin.vazio !== 'none' && fin.atalhos.length === 6, 'Financeiro abre (não fica vazio) e mostra os 6 atalhos para o Master (despesas, centros de custo, contas, fornecedores, contas a receber, gastos da obra)');
+    check(fin.vazio !== 'none' && fin.atalhos.length === 7, 'Financeiro abre (não fica vazio) e mostra os 7 atalhos para o Master (despesas, centros de custo, contas, fornecedores, contas a receber, gastos da obra, fluxo de caixa/DRE/DFC)');
     check(fin.pend === '1', 'resumo do Financeiro conta a despesa pendente de conferência (vinda do servidor)');
     await pm2.click('#financeiro-servidor .fin-atalho:has-text("Despesas")');
     await pm2.waitForFunction(() => document.querySelector('#cs-painel .cs-aba[aria-selected=true]')?.textContent === 'Despesas' && /Despesas:/.test(document.querySelector('[data-cs=status]')?.textContent || ''));
@@ -740,7 +740,7 @@ async function novo(page, campos) {
 
     console.log('Orçamento (v14): listas do servidor, número, lista atualizada, conversão em um único pedido');
     await db.query(`INSERT INTO martins_producao_v1.registros(empresa_id,modulo,id,revisao,dados,criado_por,atualizado_por) VALUES ($1,'vendedores','00000000-0000-4000-8000-0000000000f7',1,$2::jsonb,$3,$3)`, [E, JSON.stringify({ nome: 'Vendedor QA Orçamento', ativo: true }), M]);
-    pm2.on('dialog', d => d.accept());
+    pm2.on('dialog', d => d.type() === 'prompt' ? d.accept(d.defaultValue()) : d.accept());
     await pm2.evaluate(() => window.MartinsOperacional.carregar());
     await pm2.evaluate(() => window.abrirModalNovoOrcamentoVenda());
     await pm2.waitForSelector('#orc-select-cliente-cadastrado');
@@ -785,6 +785,16 @@ async function novo(page, campos) {
     await pm2.evaluate(id => window.aprovarOuConverterOrcamentoComPagamentoFase24(id, {}), o1.id);
     await pm2.waitForTimeout(1200);
     check((await pedidos()).length === 1, 'converter de novo (pelos dois botões da lista) não cria outro pedido: continua 1');
+    const titulos = await db.query(`SELECT dados FROM martins_producao_v1.registros WHERE modulo='contas_receber' AND dados->>'pedido_numero'='1'`).then(r => r.rows);
+    check(titulos.length === 1 && titulos[0].dados.valor_centavos === 30000 && titulos[0].dados.estado === 'aberta' && /PV-0001/.test(titulos[0].dados.numero_documento), 'a conversão já gerou o título a receber do pedido (R$ 300,00, em aberto), uma única vez, sem lançar à mão');
+    await pm2.evaluate(() => window.MartinsCadastrosServidor.abrir('relatorios_fin'));
+    await pm2.waitForSelector('#rf-gerar'); await pm2.click('#rf-gerar');
+    await pm2.waitForSelector('[data-rf=saida] h3:has-text("Fluxo de caixa")');
+    check(await pm2.$eval('[data-rf=saida]', n => /DRE por compet/.test(n.innerText) && /DFC/.test(n.innerText) && /Resultado/.test(n.innerText)), 'Financeiro → Fluxo de caixa, DRE e DFC: o relatório abre com os três blocos, calculado no servidor');
+    await pm2.evaluate(() => { try { window.MartinsCadastrosServidor.fechar(); } catch {} window.renderizarDashboardExecutivo(); });
+    await pm2.waitForFunction(() => /A receber/i.test(document.getElementById('dash-servidor')?.innerText || ''), null, { timeout: 15000 });
+    const dashTxt = await pm2.$eval('#dash-servidor', n => n.innerText);
+    check(/Estoque/i.test(dashTxt) && /A receber/i.test(dashTxt) && /300,00/.test(dashTxt) && !/Estoque, contas a receber, saldos/.test(dashTxt), 'o painel inicial mostra Estoque e A receber (R$ 300,00 do título gerado), sem o aviso de "indisponível"');
     await pm2.evaluate(() => window.MartinsCadastrosServidor.abrir('pedidos_venda'));
     await pm2.waitForSelector('#cs-painel td:has-text("PV-0001")');
     check(await pm2.$eval('#cs-painel tbody', n => /ORC-/.test(n.textContent) && /Cliente Legado/.test(n.textContent) && /300,00/.test(n.textContent)) && await pm2.$$('#cs-painel button:text-is("+ Novo")').then(x => x.length === 0), 'Pedidos de venda lista o pedido (PV, orçamento, cliente e total) e não oferece "+ Novo" (nascem só da conversão)');

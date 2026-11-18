@@ -287,11 +287,21 @@
  const orcamentoEstado=(id,estado,motivo=null)=>orcamentoAcao(id,'mudar a situação',async r=>{
   await W.MartinsProducaoRpc.orcamentoEstado({e:requireEmpresa(),op:crypto.randomUUID(),orcamento:id,v:Number(r.revisao),estado,motivo});return {aviso:'Situação do orçamento: '+estado+'.'};
  });
+ const dataIso=s=>{s=String(s||'').trim();if(!s)return null;let m=s.match(/^(\d{4})-(\d{2})-(\d{2})$/);if(!m){const b=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);if(!b)return undefined;m=[0,b[3],b[2].padStart(2,'0'),b[1].padStart(2,'0')];}const d=new Date(m[1]+'-'+m[2]+'-'+m[3]+'T12:00:00');return d.getMonth()+1===Number(m[2])?m[1]+'-'+m[2]+'-'+m[3]:undefined;};
  const orcamentoConverter=(id,aprovarAntes=false)=>{
   if(!confirm('Converter este orçamento em pedido de venda? Cada orçamento gera um único pedido e isso não pode ser desfeito.'))return Promise.resolve({sucesso:false,erro:'Conversão cancelada.'});
+  const cancelado=()=>Promise.resolve({sucesso:false,erro:'Conversão cancelada.'});
+  const np=prompt('Em quantas parcelas o cliente vai pagar? (1 a 60; 0 = não gerar cobrança agora)','1');if(np===null)return cancelado();
+  const parcelas=Number(String(np).trim());if(!Number.isInteger(parcelas)||parcelas<0||parcelas>60)return Promise.resolve({sucesso:false,erro:'Informe de 0 a 60 parcelas.'});
+  let primeiro=null,intervalo=30;
+  if(parcelas>0){
+   const v=prompt('Vencimento da 1ª parcela (dd/mm/aaaa). Em branco = daqui a 30 dias.','');if(v===null)return cancelado();primeiro=dataIso(v);if(primeiro===undefined)return Promise.resolve({sucesso:false,erro:'Data de vencimento inválida. Use dd/mm/aaaa.'});
+   if(parcelas>1){const i=prompt('Intervalo entre as parcelas, em dias:','30');if(i===null)return cancelado();intervalo=Number(String(i).trim());if(!Number.isInteger(intervalo)||intervalo<1||intervalo>365)return Promise.resolve({sucesso:false,erro:'Intervalo deve ser de 1 a 365 dias.'});}
+  }
   return orcamentoAcao(id,'converter em venda',async r=>{
-   const res=await W.MartinsProducaoRpc.orcamentoConverter({e:requireEmpresa(),op:crypto.randomUUID(),orcamento:id,v:Number(r.revisao),aprovar_antes:!!aprovarAntes});
-   return {pedidoNumero:res.pedido_numero,aviso:'Pedido de venda nº '+res.pedido_numero+' criado. Os recebimentos são lançados em Cadastros e Despesas → Contas a receber.'};
+   const res=await W.MartinsProducaoRpc.orcamentoConverter({e:requireEmpresa(),op:crypto.randomUUID(),orcamento:id,v:Number(r.revisao),aprovar_antes:!!aprovarAntes,parcelas,primeiro_vencimento:primeiro,intervalo_dias:intervalo});
+   const n=(res.parcelas||[]).length;
+   return {pedidoNumero:res.pedido_numero,aviso:'Pedido de venda nº '+res.pedido_numero+' criado. '+(n?n+' parcela(s) a receber gerada(s) em Cadastros e Despesas → Contas a receber.':'Nenhuma cobrança foi gerada; lance em Contas a receber quando necessário.')};
   });
  };
  const orcamentoDuplicar=id=>orcamentoAcao(id,'duplicar',async r=>{

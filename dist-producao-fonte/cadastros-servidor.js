@@ -73,6 +73,7 @@
     requisicoes: { titulo: 'Requisições de material', colunas: [], campos: [] },
     usuarios: { titulo: 'Usuários e permissões', colunas: [], campos: [] },
     gastos_obra: { titulo: 'Gastos da obra', colunas: [], campos: [] },
+    relatorios_fin: { titulo: 'Relatórios financeiros', colunas: [], campos: [] },
     backup: { titulo: 'Backup e restauração', colunas: [], campos: [] },
     epis: { titulo: 'EPIs e uniformes', colunas: ['codigo', 'nome', 'tamanho', 'estoque_minimo'], campos: [
       ['nome', 'Descrição', 'texto', { obrigatorio: true }], ['codigo', 'Código de referência', 'texto'], ['categoria', 'Categoria', 'texto'],
@@ -120,7 +121,7 @@
   };
   const contexto = () => W.obterContextoSegurancaAutenticadoWork?.() || null;
   const vinculo = () => contexto()?.vinculos?.find(v => v.empresa_id === empresa) || null;
-  const pode = (m, a) => m === 'usuarios' || m === 'backup' ? master() : m === 'gastos_obra' ? (a === 'ler' && (master() || vinculo()?.papelServidor === 'administrador')) : vinculo()?.permissoes?.[m === 'estoque' ? 'estoque_movimentos' : m === 'compras' ? 'pedidos_compra' : m === 'requisicoes' ? 'requisicoes_material' : m]?.[a] === true;
+  const pode = (m, a) => m === 'usuarios' || m === 'backup' ? master() : (m === 'gastos_obra' || m === 'relatorios_fin') ? (a === 'ler' && (master() || vinculo()?.papelServidor === 'administrador')) : vinculo()?.permissoes?.[m === 'estoque' ? 'estoque_movimentos' : m === 'compras' ? 'pedidos_compra' : m === 'requisicoes' ? 'requisicoes_material' : m]?.[a] === true;
   const master = () => vinculo()?.papelServidor === 'master';
   const gravacao = () => W.gravacaoHabilitadaWork?.() === true;
   const reais = c => (Number(c) / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -182,6 +183,7 @@
     if (aba === 'requisicoes') return carregarRequisicoes();
     if (aba === 'usuarios') return carregarUsuarios();
     if (aba === 'gastos_obra') return carregarGastosObra();
+    if (aba === 'relatorios_fin') return carregarRelatoriosFin();
     if (aba === 'backup') return carregarBackup();
     const linhas = await listarTodos(aba);
     registros = new Map(linhas.map(r => [r.id, r]));
@@ -720,12 +722,42 @@
           el('section', { classe: 'cs-totais', 'data-go': 'resumo' }, el('h4', { texto: 'Resumo da obra (calculado no servidor)' }),
             el('div', { texto: 'Material consumido (valorizado): ' + reais(g.material_centavos) }), el('div', { texto: 'Despesas diretas da obra: ' + reais(g.despesas_diretas_centavos) + (g.confidenciais_incluidas_centavos ? ' (inclui ' + reais(g.confidenciais_incluidas_centavos) + ' confidenciais)' : '') }),
             el('strong', { texto: 'Total apropriado à obra: ' + reais(g.total_centavos) })),
-          el('p', { classe: 'cs-aviso', texto: 'O custo do material usa o custo médio das compras recebidas (já descontadas as devoluções ao fornecedor), calculado agora: não congela o custo do dia do consumo. Compras feitas para a obra não são somadas às despesas, porque o material só vira custo da obra quando é consumido (' + reais(g.despesas_de_compras_nao_somadas_centavos) + ' de despesas de compras ficaram de fora para não contar duas vezes).' }));
+          el('p', { classe: 'cs-aviso', texto: 'O custo do material é gravado no dia do consumo (custo médio das compras recebidas até então); compras posteriores a preço diferente não mudam o custo já apropriado, e a devolução usa o custo do consumo original. Movimentos antigos, anteriores a esta regra, são estimados pelo custo médio atual e aparecem sinalizados. Compras feitas para a obra não são somadas às despesas, porque o material só vira custo da obra quando é consumido (' + reais(g.despesas_de_compras_nao_somadas_centavos) + ' de despesas de compras ficaram de fora para não contar duas vezes).' }));
       } catch (e) { saida.replaceChildren(el('p', { classe: 'cs-erro', role: 'alert', texto: traduzir(e) })); }
     };
     obra.addEventListener('change', consultar);
     corpo.replaceChildren(el('section', { classe: 'cs-form' }, el('h3', { texto: 'Gastos da obra' }), el('div', { classe: 'cs-acoes' }, obra)), saida);
     mensagem('Gastos da obra: escolha a obra.');
+  }
+  // ---------- Relatórios financeiros (v15): fluxo de caixa, DRE por competência e DFC ----------
+  async function carregarRelatoriosFin() {
+    const corpo = painel.querySelector('[data-cs=corpo]');
+    const hoje = hojeLocal(), ini = hoje.slice(0, 4) + '-01-01';
+    const de = el('input', { type: 'date', id: 'rf-de', value: ini, 'aria-label': 'De' }), ate = el('input', { type: 'date', id: 'rf-ate', value: hoje, 'aria-label': 'Até' });
+    const saida = el('div', { 'data-rf': 'saida' }, el('p', { classe: 'cs-aviso', texto: 'Escolha o período e clique em Gerar. Os números são calculados no servidor, só com lançamentos registrados (recebimentos baixados e despesas pagas). Só Master e Administrador com leitura integral veem estes relatórios.' }));
+    const MES = m => { const [a, b] = m.split('-'); return ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'][Number(b) - 1] + '/' + a; };
+    const tab = (cab, linhas) => el('div', { classe: 'cs-rolagem' }, el('table', { classe: 'cs-tabela' }, el('thead', {}, el('tr', {}, cab.map(x => el('th', { texto: x })))), el('tbody', {}, linhas.map(l => el('tr', {}, l.map((c, i) => el('td', { 'data-rotulo': cab[i], texto: c })))))));
+    const gerar = async () => {
+      if (!de.value || !ate.value) { saida.replaceChildren(el('p', { classe: 'cs-erro', role: 'alert', texto: 'Informe as duas datas.' })); return; }
+      saida.replaceChildren(el('p', { texto: 'Calculando no servidor…' }));
+      try {
+        const r = await W.MartinsProducaoRpc.financeiroRelatorios({ e: empresa, de: de.value, ate: ate.value });
+        const f = r.fluxo_caixa, d = r.dre, c = r.dfc;
+        saida.replaceChildren(
+          el('section', {}, el('h3', { texto: 'Fluxo de caixa (regime de caixa)' }),
+            tab(['Mês', 'Entradas', 'Saídas', 'Saldo', 'A receber (previsto)', 'A pagar (previsto)'], f.meses.map(m => [MES(m.mes), reais(m.entradas_centavos), reais(m.saidas_centavos), reais(m.saldo_centavos), reais(m.previstas_entradas_centavos), reais(m.previstas_saidas_centavos)]).concat([['Total', reais(f.totais.entradas_centavos), reais(f.totais.saidas_centavos), reais(f.totais.saldo_centavos), reais(f.totais.previstas_entradas_centavos), reais(f.totais.previstas_saidas_centavos)]])),
+            el('p', { classe: 'cs-aviso', texto: 'Entradas = recebimentos baixados na data do recebimento (estornos não contam). Saídas = despesas pagas, na data do pagamento. O previsto mostra o que ainda está aberto, por mês de vencimento.' })),
+          el('section', {}, el('h3', { texto: 'DRE por competência' }),
+            el('div', { classe: 'cs-totais' }, el('div', { texto: 'Receitas (títulos a receber do período): ' + reais(d.receitas_centavos) }), el('div', { texto: 'Despesas (competência no período): ' + reais(d.despesas_centavos) }), el('strong', { texto: 'Resultado: ' + reais(d.resultado_centavos) })),
+            tab(['Classificação', 'Total'], d.despesas_por_classificacao.map(x => [x.classificacao, reais(x.total_centavos)])),
+            tab(['Centro de custo', 'Total'], d.despesas_por_centro_custo.map(x => [[x.codigo, x.nome].filter(Boolean).join(' · ') || 'Sem centro de custo', reais(x.total_centavos)]))),
+          el('section', {}, el('h3', { texto: 'DFC — caixa efetivo' }),
+            el('div', { classe: 'cs-totais' }, el('div', { texto: 'Recebimentos de clientes: ' + reais(c.recebimentos_de_clientes_centavos) }), el('div', { texto: 'Pagamentos de obra: ' + reais(c.pagamentos_obra_centavos) }), el('div', { texto: 'Pagamentos administrativos: ' + reais(c.pagamentos_administrativos_centavos) }), el('strong', { texto: 'Caixa líquido do período: ' + reais(c.caixa_liquido_centavos) }))),
+          el('p', { classe: 'cs-aviso', texto: r.inclui_confidenciais ? 'Inclui despesas confidenciais (visão Master).' : 'Não inclui despesas confidenciais; apenas o Master as vê.' }));
+      } catch (e) { saida.replaceChildren(el('p', { classe: 'cs-erro', role: 'alert', texto: traduzir(e) })); }
+    };
+    corpo.replaceChildren(el('section', { classe: 'cs-form' }, el('h3', { texto: 'Relatórios financeiros' }), el('div', { classe: 'cs-acoes' }, el('label', { texto: 'De ' }, de), el('label', { texto: 'Até ' }, ate), el('button', { type: 'button', id: 'rf-gerar', classe: 'cs-primario', texto: 'Gerar', onclick: gerar }))), saida);
+    mensagem('Relatórios financeiros: escolha o período.');
   }
   // ---------- Backup e restauração (v13): somente Master ----------
   async function carregarBackup() {
@@ -924,8 +956,8 @@
     if (!painel) montar();
     painel.hidden = false; D.body.classList.add('cs-aberto');
     try { await sincronizarSessao(); painel.querySelector('[data-cs=empresa]').textContent = (vinculo()?.nomeEmpresa || '') + (master() ? ' · Master' : '') + (gravacao() ? '' : ' · somente leitura'); if (MODULOS[inicial] && pode(inicial, 'ler')) aba = inicial; desenharAbas(); if (aba) await carregarAba();
-      if (preenchimento && !['estoque', 'compras', 'requisicoes', 'usuarios', 'gastos_obra', 'backup'].includes(inicial) && aba !== inicial) { mensagem('O cadastro de ' + (MODULOS[inicial]?.titulo || inicial).toLowerCase() + ' ainda não está liberado para o seu vínculo nesta empresa (ou o módulo não foi habilitado no servidor). Nada foi gravado no navegador.', true); return; }
-      if (preenchimento && !['estoque', 'compras', 'requisicoes', 'usuarios', 'gastos_obra', 'backup'].includes(inicial) && aba === inicial) {
+      if (preenchimento && !['estoque', 'compras', 'requisicoes', 'usuarios', 'gastos_obra', 'relatorios_fin', 'backup'].includes(inicial) && aba !== inicial) { mensagem('O cadastro de ' + (MODULOS[inicial]?.titulo || inicial).toLowerCase() + ' ainda não está liberado para o seu vínculo nesta empresa (ou o módulo não foi habilitado no servidor). Nada foi gravado no navegador.', true); return; }
+      if (preenchimento && !['estoque', 'compras', 'requisicoes', 'usuarios', 'gastos_obra', 'relatorios_fin', 'backup'].includes(inicial) && aba === inicial) {
         if (!pode(aba, 'criar')) { mensagem('Seu vínculo não tem permissão para cadastrar ' + MODULOS[aba].titulo.toLowerCase() + '. Peça a liberação ao Master.', true); return; }
         abrirFormulario(null, preenchimento);
         mensagem('Este cadastro agora é gravado no servidor e compartilhado com a equipe. Confira os dados trazidos do formulário e clique em Salvar.');
@@ -1012,7 +1044,8 @@
   // do financeiro no servidor: resumo das despesas e atalhos para os cadastros financeiros.
   const ATALHOS = [['despesas', 'Despesas', 'Lançar, conferir, aprovar, pagar e conciliar'], ['centros_custo', 'Centros de custo', 'Obra ou administrativo, sem texto livre'],
     ['contas_bancarias', 'Contas bancárias', 'Contas por empresa'], ['fornecedores', 'Fornecedores e beneficiários', 'CPF/CNPJ único por empresa'],
-    ['contas_receber', 'Contas a receber', 'Títulos, recebimentos parciais e estorno'], ['gastos_obra', 'Gastos da obra', 'Material consumido + despesas diretas, por obra']];
+    ['contas_receber', 'Contas a receber', 'Títulos, recebimentos parciais e estorno'], ['gastos_obra', 'Gastos da obra', 'Material consumido + despesas diretas, por obra'],
+    ['relatorios_fin', 'Fluxo de caixa, DRE e DFC', 'Entradas, saídas, resultado por competência e caixa efetivo']];
   let resumoEmCurso = null;
   function montarFinanceiro() {
     const view = D.getElementById('view-financeiro');
@@ -1023,7 +1056,7 @@
       el('p', { texto: 'Dados gravados no servidor e compartilhados com a equipe autorizada da empresa ativa.' }),
       el('div', { classe: 'fin-resumo', 'data-fin': 'resumo' }),
       el('div', { classe: 'fin-atalhos', 'data-fin': 'atalhos' }),
-      el('p', { classe: 'fin-pendente', texto: 'Já no servidor: despesas, contas a receber (recebimentos e estornos) e gastos por obra. Ainda não ligados: fluxo de caixa, DRE/DFC e conciliação por extrato (OFX/CSV); esses relatórios serão liberados quando os contratos correspondentes forem concluídos.' }));
+      el('p', { classe: 'fin-pendente', texto: 'Já no servidor: despesas, contas a receber (recebimentos e estornos), gastos por obra, fluxo de caixa, DRE e DFC (Master e Administrador). Ainda não ligado: conciliação por extrato (OFX/CSV).' }));
     view.prepend(sec);
     new MutationObserver(() => { if (!view.classList.contains('hidden') && view.offsetParent !== null) atualizarFinanceiro(); }).observe(view, { attributes: true, attributeFilter: ['class', 'style'] });
     if (view.offsetParent !== null) atualizarFinanceiro();

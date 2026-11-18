@@ -94,7 +94,8 @@
       '/rest/v1/rpc/martins_producao_obra_materiais',
       '/rest/v1/rpc/martins_producao_usuarios_listar',
       '/rest/v1/rpc/martins_producao_receber_totais',
-      '/rest/v1/rpc/martins_producao_obra_gastos'
+      '/rest/v1/rpc/martins_producao_obra_gastos',
+      '/rest/v1/rpc/martins_producao_financeiro_relatorios'
     ].includes(path);
     // Gravação só quando o build a habilita explicitamente (homologação); a produção permanece somente leitura.
     const escrita = gravacaoHabilitadaWork() && schema === 'public' && method === 'POST' && [
@@ -459,6 +460,7 @@
     backupImportar:args=>rpcProducao('martins_producao_backup_importar',args),
     comprasDevolver:args=>rpcProducao('martins_producao_compras_devolver',args),
     obraGastos:args=>rpcProducao('martins_producao_obra_gastos',args),
+    financeiroRelatorios:args=>rpcProducao('martins_producao_financeiro_relatorios',args),
     receberTotais:e=>rpcProducao('martins_producao_receber_totais',{e}),
     receberBaixar:args=>rpcProducao('martins_producao_receber_baixar',args),
     receberEstado:args=>rpcProducao('martins_producao_receber_estado',args),

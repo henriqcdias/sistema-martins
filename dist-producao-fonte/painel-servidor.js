@@ -83,7 +83,7 @@
     if (!v) return;
     const cards = el('div', { classe: 'ds-cards' }, el('div', { classe: 'ds-card' }, el('small', { texto: 'Carregando' }), el('strong', { texto: '…' })));
     raiz.append(cards);
-    const geracao = ++geracaoPainel;
+    const geracao = ++geracaoPainel; const e0 = empresaAtiva();
     try {
       const [obras, funcionarios, rdos, orcamentos, despesas] = await Promise.all(['obras', 'funcionarios', 'rdos', 'orcamentos', 'despesas'].map(m => listar(m).catch(() => null)));
       if (geracao !== geracaoPainel) return;
@@ -106,6 +106,21 @@
         card('Despesas pendentes de conferência', pend.length, reais(soma(pend)));
         card('Despesas do mês', reais(soma(vivas.filter(d => String(d.dados.competencia || '').startsWith(mes)))), master() ? 'inclui confidenciais' : 'somente as visíveis para você');
       }
+      if (pode('estoque_movimentos')) {
+        try {
+          const s = await W.MartinsProducaoRpc.estoqueSaldos(e0);
+          const por = new Map(); for (const x of s || []) por.set(x.produto_id, (por.get(x.produto_id) || 0) + Number(x.saldo_milli || 0));
+          card('Estoque', [...por.values()].filter(q => q > 0).length, 'produto(s) com saldo positivo');
+        } catch (_) { card('Estoque', '—', 'não foi possível consultar agora'); }
+      }
+      if (pode('contas_receber')) {
+        try {
+          const t = await W.MartinsProducaoRpc.receberTotais(e0);
+          card('A receber', reais(t.a_receber_centavos), t.titulos_abertos + ' título(s) em aberto · vencido ' + reais(t.vencido_centavos));
+          card('Recebido no mês', reais(t.recebido_mes_centavos), 'baixas registradas neste mês');
+        } catch (_) { card('A receber', '—', 'não foi possível consultar agora'); }
+      }
+      if (geracao !== geracaoPainel) return;
       cards.replaceChildren(...lista);
       if (!lista.length) cards.replaceChildren(el('p', { texto: 'Seu vínculo não tem permissão de leitura nos módulos do painel.' }));
       if (obrasUnicas && obrasUnicas.length) {
@@ -115,7 +130,7 @@
             el('tbody', {}, ordenadas.map(o => el('tr', {}, el('td', { texto: o.dados.nome || '' }), el('td', { texto: o.dados.codigo || '' }),
               el('td', { texto: o.dados.situacaoAtual || o.dados.status || '' }), el('td', { texto: o.dados.clienteResponsavel || '' })))))));
       }
-      raiz.append(el('p', { classe: 'ds-aviso', texto: 'Estoque, contas a receber, saldos bancários, vales e EPIs aparecerão aqui quando esses módulos estiverem gravando no servidor. Nenhum valor de demonstração é exibido.' }));
+      raiz.append(el('p', { classe: 'ds-aviso', texto: 'Saldos bancários, vales e EPIs aparecerão aqui quando esses módulos estiverem gravando no servidor. Nenhum valor de demonstração é exibido.' }));
     } catch (e) { if (geracao === geracaoPainel) cards.replaceChildren(el('p', { classe: 'ds-erro', texto: 'Não foi possível carregar o painel: ' + (e?.message || 'falha') })); }
   }
   travar('renderizarDashboardExecutivo', () => { renderizarPainel(); });

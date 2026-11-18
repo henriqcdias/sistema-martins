@@ -901,6 +901,45 @@ async function novo(page, campos) {
     check(blocos >= 38, 'o conteúdo do PDF traz o serviço de cada um dos diários (' + blocos + ' encontrados)');
     check(await pm2.$eval('#p-dynamic-content', n => !/Fora do período/.test(n.innerText)), 'e não traz o diário fora do período');
 
+    console.log('RH: relatório com totais reais, data de nascimento e contadores do quadro');
+    await pm2.evaluate(() => window.MartinsOperacional.carregar());
+    await pm2.evaluate(() => { document.getElementById('modal-cadastros-servidor')?.classList.add('hidden'); window.navegarParaSecao('colaboradores'); });
+    const relRh = await pm2.evaluate(async () => {
+      const hoje = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }); window.estadoFiltrosRelatoriosRhFase2 = window.estadoFiltrosRelatoriosRhFase2 || {}; window.estadoFiltrosRelatoriosRhFase2.mesAno = hoje.slice(0, 7);
+      window.abaAtivaRelatoriosRhFase2 = 'alocacao'; window.alternarAbaRelatoriosRhFase2('alocacao'); await new Promise(r => setTimeout(r, 500));
+      const linhas = [...document.querySelectorAll('#tbody-rel-alocacao tr')].map(r => r.innerText.replace(/\s+/g, ' '));
+      window.estadoFiltrosRelatoriosRhFase2.mesAno = '2020-01'; window.alternarAbaRelatoriosRhFase2('alocacao'); await new Promise(r => setTimeout(r, 500));
+      const vazio = [...document.querySelectorAll('#tbody-rel-alocacao tr')].map(r => r.innerText.replace(/\s+/g, ' '));
+      return { linhas, vazio };
+    });
+    check(relRh.linhas.some(l => /QA Obra Engenharia \(1d\)/.test(l) && /\b1d\b/.test(l) && /\b8h\b/.test(l)) && !relRh.linhas.some(l => /UEMG/.test(l)), 'Relatórios RH → Alocação: o funcionário lançado mostra 1 dia / 8 h na obra real (antes todos mostravam 22d / 176h / UEMG – Bloco 1)');
+    check(relRh.vazio.length >= 1 && relRh.vazio.every(l => /\b0d\b/.test(l) && /\b0h\b/.test(l) && !/22d|176h|UEMG/.test(l)), 'em um período sem lançamentos todos mostram 0d / 0h (o total vem dos lançamentos do funcionário e do período, não de um número fixo)');
+    const fulanoId = (await db.query(`SELECT id FROM martins_producao_v1.registros WHERE modulo='funcionarios' AND dados->>'nome'='Fulano de Teste'`)).rows[0].id;
+    await pm2.evaluate(id => window.abrirModalEditarColaborador(id), fulanoId);
+    await pm2.waitForSelector('#edit-colab-nascimento');
+    await pm2.fill('#edit-colab-nascimento', '1990-05-17');
+    await pm2.evaluate(() => document.getElementById('form-editar-colaborador').dispatchEvent(new Event('submit', { cancelable: true, bubbles: true })));
+    await pm2.waitForFunction(() => /Salvamento confirmado|Confirme sua senha/.test(document.getElementById('producao-status')?.textContent || '') || document.querySelector('dialog[open] input[type=password]'), null, { timeout: 15000 });
+    if (await pm2.$('dialog[open] input[type=password]')) { await pm2.fill('dialog[open] input[type=password]', 'senha-sintetica'); await pm2.click('dialog[open] button[type=submit]'); await pm2.waitForFunction(() => /Salvamento confirmado/.test(document.getElementById('producao-status')?.textContent || ''), null, { timeout: 15000 }); }
+    check((await db.query(`SELECT dados->>'dataNascimento' d FROM martins_producao_v1.registros WHERE id=$1`, [fulanoId])).rows[0].d === '1990-05-17', 'a data de nascimento é gravada no servidor (o formulário antigo nem tinha o campo)');
+    await pm2.reload({ waitUntil: 'networkidle' }); await pm2.waitForTimeout(3500);
+    await pm2.evaluate(id => window.abrirModalEditarColaborador(id), fulanoId);
+    await pm2.waitForSelector('#edit-colab-nascimento');
+    check(await pm2.$eval('#edit-colab-nascimento', n => n.value) === '1990-05-17', 'ao reabrir a ficha depois do F5, a data de nascimento continua preenchida');
+    await pm2.evaluate(() => document.getElementById('modal-editar-colaborador')?.classList.add('hidden'));
+    let cpfN = 0;
+    for (const [nome, vinculo, status] of [['Cleide CLT', 'Próprio (CLT)', 'Ativo'], ['Tiago Terceiro', 'Terceirizado (Subempreiteiro)', 'Ativo'], ['Vera Sem Vínculo', '', 'Ativo'], ['Inácio Inativo', 'Próprio (CLT)', 'Inativo']])
+      await db.query(`INSERT INTO martins_producao_v1.registros(empresa_id,modulo,id,revisao,dados,criado_por,atualizado_por) VALUES ($1,'funcionarios',gen_random_uuid(),1,$2::jsonb,$3,$3)`, [E, JSON.stringify({ nome, funcao: 'Auxiliar', cpf: '000.000.00' + (++cpfN) + '-00', status, vinculo }), M]);
+    await pm2.evaluate(() => window.MartinsOperacional.carregar());
+    const esperado = (await db.query(`SELECT count(*) FILTER (WHERE COALESCE(dados->>'status','Ativo')<>'Inativo')::int ativos, count(*) FILTER (WHERE COALESCE(dados->>'status','Ativo')<>'Inativo' AND dados->>'vinculo' ~* '(clt|pr[óo]prio)')::int clt, count(*) FILTER (WHERE COALESCE(dados->>'status','Ativo')<>'Inativo' AND dados->>'vinculo' ~* '(terc|sub)')::int terc, count(*) FILTER (WHERE COALESCE(dados->>'status','Ativo')='Inativo')::int inativos, count(*)::int total FROM martins_producao_v1.registros WHERE empresa_id=$1 AND modulo='funcionarios'`, [E])).rows[0];
+    await pm2.evaluate(() => { window.navegarParaSecao('colaboradores'); [...document.querySelectorAll('#view-colaboradores button')].find(b => /👥/.test(b.textContent) && /Colaboradores/.test(b.textContent))?.click(); });
+    await pm2.waitForTimeout(1500);
+    await pm2.evaluate(() => { window.atualizarIndicadoresDinamicosQuadroFuncionarios(); window.atualizarPainelExecutivoRhFase30?.(); });
+    const cont = await pm2.evaluate(() => ({ ativos: Number(document.getElementById('stat-colab-total')?.textContent), clt: Number(document.getElementById('stat-colab-clt')?.textContent), terc: Number(document.getElementById('stat-colab-terc')?.textContent), resumo: document.getElementById('stat-colab-resumo-geral')?.textContent || '', card: [...document.querySelectorAll('#view-colaboradores *')].map(n => n.children.length === 0 ? n.textContent : '').find(t => /CLT\/Próprios/.test(t)) || '' }));
+    check(cont.ativos === esperado.ativos && cont.clt === esperado.clt && cont.terc === esperado.terc, 'os contadores do quadro batem com o servidor: ' + esperado.ativos + ' ativos, ' + esperado.clt + ' CLT, ' + esperado.terc + ' terceirizados (mostrou ' + cont.ativos + '/' + cont.clt + '/' + cont.terc + ')');
+    check(cont.resumo.includes('Total cadastrado: ' + esperado.total) && cont.resumo.includes('Inativos: ' + esperado.inativos) && /Sem vínculo informado: \d+/.test(cont.resumo) && !/\b54\b/.test(cont.resumo), 'o resumo explica cada contador (total cadastrado ' + esperado.total + ', inativos, sem vínculo informado) e não traz mais o "54" fixo: "' + cont.resumo + '"');
+    check(/\d+ CLT\/Próprios · \d+ terceirizados · \d+ sem vínculo informado/.test(cont.card) && !/^0 CLT/.test(cont.card), 'o card "Efetivo total ativo" classifica CLT/Próprios, terceirizados e sem vínculo (antes mostrava "0 CLT" mesmo com funcionários CLT)');
+
     console.log('Rodada 4: ficha, histórico, busca e mensagens');
     await pm2.evaluate(() => { document.getElementById('modal-editar-colaborador').classList.add('hidden'); });
     await pm2.evaluate(id => window.abrirFichaColaborador(id), criados[0].id);

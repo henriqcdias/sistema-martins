@@ -36,7 +36,7 @@
  // As cópias para os renderizadores legados não são a fonte dos dados editáveis.
  const seguro=x=>typeof x==='string'?x.replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'’').replaceAll('\\','＼'):Array.isArray(x)?x.map(seguro):x&&typeof x==='object'?Object.fromEntries(Object.entries(x).map(([k,v])=>[k,seguro(v)])):x;
  function listar(m){return [...dados[m].values()].map(r=>({...clone(r.dados),id:r.id,empresaId:r.empresa_id,empresa_id:r.empresa_id,remote_id:r.id,rowVersion:r.revisao,revisao:r.revisao}));}
- function visao(m){return seguro(listar(m).map(r=>({...r,empresa:contexto()?.vinculos.find(v=>v.empresa_id===r.empresa_id)?.nomeEmpresa||'',...(m==='funcionarios'?{obraId:r.obra_id||null,obra:catalogos.obras.find(o=>o.id===r.obra_id)?.nome||'',funcao:r.funcao||'',vinculo:r.vinculo||'',status:r.status||'Ativo'}:{}),...(m==='orcamentos'?{num:r.numero?'ORC-'+String(r.numero).padStart(4,'0'):'',valorTotal:r.total,status:(!r.status||r.status==='Em Orçamento')?'Em elaboração':r.status,obra:catalogos.obras.find(o=>o.id===r.obra_id)?.nome||'',vendedor:r.vendedorResponsavel||''}:{})})));}
+ function visao(m){return seguro(listar(m).map(r=>({...r,empresa:contexto()?.vinculos.find(v=>v.empresa_id===r.empresa_id)?.nomeEmpresa||'',...(m==='funcionarios'?{obraId:r.obra_id||null,obra:catalogos.obras.find(o=>o.id===r.obra_id)?.nome||'',funcao:r.funcao||'',vinculo:r.vinculo||'',status:r.status||'Ativo',nascimento:r.dataNascimento||''}:{}),...(m==='orcamentos'?{num:r.numero?'ORC-'+String(r.numero).padStart(4,'0'):'',valorTotal:r.total,status:(!r.status||r.status==='Em Orçamento')?'Em elaboração':r.status,obra:catalogos.obras.find(o=>o.id===r.obra_id)?.nome||'',vendedor:r.vendedorResponsavel||''}:{})})));}
  function tabelaFrequencia(){const out={};for(const r of listar('frequencia')){out[r.data]??={};const p=out[r.data][r.funcionario_id]??={colabId:r.funcionario_id,nome:catalogos.funcionarios.find(x=>x.id===r.funcionario_id)?.nome||'',status:r.situacao,horas:0,he50:0,he100:0,alocacoes:[]};p.horas+=Number(r.horas_normais);p.he50+=Number(r.horas_extras||0);p.obra=catalogos.obras.find(o=>o.id===r.obra_id)?.nome||'';p.obraId=r.obra_id||'';p.rowVersion=r.revisao;p.alocacoes.push(r);const bruto=dados.frequencia.get(r.id);if(bruto){const quem=bruto.criado_por&&bruto.criado_por===contexto()?.uid?(contexto()?.nome||'você'):'outro usuário';p.inseridoPor=quem;p.dataHoraInsercao=bruto.criado_em?new Date(bruto.criado_em).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}):'';p.origem='Frequência (servidor)';}}return seguro(out);}
  // O código antigo copiava a lista de orçamentos/pedidos (agora vinda do servidor) para o navegador. Essas cópias locais
  // não são mais gravadas: a única fonte é o servidor.
@@ -44,6 +44,10 @@
  // Orçamentos: a lista em memória do código antigo é sempre a do servidor. Sementes de demonstração (UEMG, SENAI…)
  // e cópias locais não conseguem mais se misturar a ela.
  try{Object.defineProperty(W,'orcamentosComerciaisDb',{configurable:true,enumerable:true,get:()=>visao('orcamentos'),set:()=>{}});}catch{}
+ // Listas de funcionários do código antigo: sempre a do servidor (as sementes de 54 funcionários não entram mais).
+ try{for(const nome of ['colaboradoresDb','funcionariosDb','colaboradoresOficialDb'])Object.defineProperty(W,nome,{configurable:true,enumerable:true,get:()=>visao('funcionarios'),set:()=>{}});}catch{}
+ // O quadro e os indicadores liam uma cópia antiga guardada no navegador (cm_colaboradores_db, com 54 funcionários de exemplo) antes do servidor.
+ try{Object.defineProperty(W,'obterQuadroFuncionariosOficialUnico',{configurable:true,enumerable:true,get:()=>()=>visao('funcionarios'),set:()=>{}});}catch{}
  function instalarLeituras(){
   W.getColaboradoresDb=()=>visao('funcionarios');W.getDb=()=>visao('rdos').map(r=>({...r,num:r.numero,obra:seguro(catalogos.obras.find(o=>o.id===r.obra_id)?.nome||''),obraId:r.obra_id,cliente:seguro(registro('obras',r.obra_id)?.dados.clienteResponsavel||''),resp:r.responsavel||'',status:'Rascunho'}));
   W.getFrequenciaDiariaDb=tabelaFrequencia;
@@ -203,6 +207,8 @@
    // No modal de cadastro a obra é um campo oculto ("Rotativo": alocação dinâmica pela frequência); só um id real vira vínculo fixo.
    obra_id:p==='edit-colab-'&&!uuid(val(p+'obra'))?null:referencia('obras',val(p+'obra'),true)};
   if(ficha&&el('ficha-inp-salario'))dados.salarioBase=num(val('ficha-inp-salario'));
+  // Data de nascimento: gravada no servidor; campo vazio limpa o valor anterior.
+  if(el(p+'nascimento')){const nasc=val(p+'nascimento');dados.dataNascimento=nasc===''?null:nasc;}
   if(p==='edit-colab-'){
    // Campos do bloco RH/SST do modal: vazio fica null (limpa o valor anterior na edição).
    const opcional=(chave,campo,conv=x=>x)=>{if(!el(campo))return;const v=val(campo);dados[chave]=v===''?null:conv(v);};
@@ -414,10 +420,10 @@
   W.salvarNovoOrcamentoVendaForm=event=>{event?.preventDefault();return submeter(el('form-novo-orcamento-venda'));};
   W.salvarFrequenciaDiariaDoDia=()=>comDesbloqueio(frequencia).catch(x=>mensagem(x.message,true));
   W.salvarRdo=(status)=>{if(status&&status.toLowerCase()!=='rascunho'){mensagem('Aprovação e assinatura exigem contrato próprio. O RDO operacional é salvo como rascunho.',true);return;}return submeter(el('form-rdo'));};
-  const oldEdit=W.abrirModalEditarColaborador;W.abrirModalEditarColaborador=id=>{oldEdit?.(id);const r=registro('funcionarios',id);if(!r)return;const f=el('form-editar-colaborador');f.dataset.registroProducao=id;f.dataset.revisaoProducao=r.revisao;for(const [field,key]of [['nome','nome'],['cpf','cpf'],['rg','rg'],['funcao','funcao'],['vinculo','vinculo'],['admissao','dataAdmissao'],['status','status'],['obra','obra_id'],['obs','obs'],['salario','salarioBase'],['tipo-pix','tipoChavePix'],['pix','chavePix'],['anexo-documento','anexoDocumento'],['aso-venc','asoValidade'],['cnh-validade','cnhValidade'],['nr10-venc','nr10Validade'],['nr18-venc','nr18Validade'],['nr35-venc','nr35Validade'],['encerramento','dataEncerramento'],['motivo-encerramento','motivoEncerramento']])if(el('edit-colab-'+field))el('edit-colab-'+field).value=r.dados[key]??'';};
+  const oldEdit=W.abrirModalEditarColaborador;W.abrirModalEditarColaborador=id=>{oldEdit?.(id);const r=registro('funcionarios',id);if(!r)return;const f=el('form-editar-colaborador');f.dataset.registroProducao=id;f.dataset.revisaoProducao=r.revisao;for(const [field,key]of [['nome','nome'],['cpf','cpf'],['rg','rg'],['funcao','funcao'],['vinculo','vinculo'],['admissao','dataAdmissao'],['nascimento','dataNascimento'],['status','status'],['obra','obra_id'],['obs','obs'],['salario','salarioBase'],['tipo-pix','tipoChavePix'],['pix','chavePix'],['anexo-documento','anexoDocumento'],['aso-venc','asoValidade'],['cnh-validade','cnhValidade'],['nr10-venc','nr10Validade'],['nr18-venc','nr18Validade'],['nr35-venc','nr35Validade'],['encerramento','dataEncerramento'],['motivo-encerramento','motivoEncerramento']])if(el('edit-colab-'+field))el('edit-colab-'+field).value=r.dados[key]??'';};
   const oldFicha=W.abrirFichaColaborador;W.abrirFichaColaborador=id=>{
     oldFicha?.(id);const r=registro('funcionarios',id),f=el('form-editar-ficha-colab-estab');if(!r||!f)return;f.dataset.registroProducao=id;f.dataset.revisaoProducao=r.revisao;
-    for(const [field,key]of [['nome','nome'],['cpf','cpf'],['funcao','funcao'],['admissao','dataAdmissao'],['salario','salarioBase']])if(el('ficha-inp-'+field))el('ficha-inp-'+field).value=r.dados[key]??'';
+    for(const [field,key]of [['nome','nome'],['cpf','cpf'],['funcao','funcao'],['admissao','dataAdmissao'],['nascimento','dataNascimento'],['salario','salarioBase']])if(el('ficha-inp-'+field))el('ficha-inp-'+field).value=r.dados[key]??'';
     if(el('ficha-inp-obra')?.tagName!=='SELECT'){const old=el('ficha-inp-obra');if(old){const select=D.createElement('select');select.id=old.id;select.className=old.className;old.replaceWith(select);}}
     seletores();if(el('ficha-inp-obra'))el('ficha-inp-obra').value=r.dados.obra_id||'';
   };

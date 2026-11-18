@@ -1994,18 +1994,18 @@
           </div>
           <div class="bg-blue-50/60 p-3.5 rounded-xl border border-blue-200 text-center shadow-2xs">
             <span class="text-[10px] text-blue-800 font-bold uppercase block">Próprios (CLT)</span>
-            <span id="stat-colab-clt" class="text-2xl font-black text-blue-900">20</span>
-            <span class="text-[10px] text-blue-700">Folha de Passos/MG</span>
+            <span id="stat-colab-clt" class="text-2xl font-black text-blue-900">--</span>
+            <span class="text-[10px] text-blue-700">Vínculo CLT/Próprio</span>
           </div>
           <div class="bg-orange-50/60 p-3.5 rounded-xl border border-orange-200 text-center shadow-2xs">
             <span class="text-[10px] text-orange-800 font-bold uppercase block">Subempreiteiros</span>
-            <span id="stat-colab-terc" class="text-2xl font-black text-orange-900">2</span>
+            <span id="stat-colab-terc" class="text-2xl font-black text-orange-900">--</span>
             <span class="text-[10px] text-orange-700">Terceirizados</span>
           </div>
           <div class="bg-emerald-50/60 p-3.5 rounded-xl border border-emerald-200 text-center shadow-2xs">
             <span class="text-[10px] text-emerald-800 font-bold uppercase block">EPIs & Ficha Ok</span>
             <span id="stat-colab-epi" class="text-2xl font-black text-emerald-900">--</span>
-            <span class="text-[10px] text-emerald-700">100% equipados</span>
+            <span class="text-[10px] text-emerald-700">com entrega de EPI registrada</span>
           </div>
         </div>
 
@@ -5427,7 +5427,7 @@
 
     // ON LOAD
     document.addEventListener("DOMContentLoaded", () => {
-      const today = new Date().toISOString().split("T")[0];
+      const today = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0];
       const inputData = document.getElementById("input-data");
       if (inputData) inputData.value = today;
       const pontoData = document.getElementById("ponto-data-filtro");
@@ -5595,7 +5595,7 @@
           }
 
           // Gravação automática em segundo plano para não perder marcações
-          const dataFiltro = document.getElementById("ponto-data-filtro") ? document.getElementById("ponto-data-filtro").value : new Date().toISOString().split("T")[0];
+          const dataFiltro = document.getElementById("ponto-data-filtro") ? document.getElementById("ponto-data-filtro").value : new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0];
           const colabId = tr.dataset.colabId;
           const colabNome = tr.dataset.colabNome;
 
@@ -5892,7 +5892,7 @@
           const m = parseInt(parts[1], 10);
           const d = parseInt(parts[2], 10);
           if (m === mesAtual) {
-            aniversariantesMes.push({ nome: c.nome, dia: d, hoje: d === diaAtual, tel: c.telefone || '35999887766' });
+            aniversariantesMes.push({ nome: c.nome, dia: d, hoje: d === diaAtual, tel: c.telefone || '' });
             if (d === diaAtual) aniversariantesHoje.push(c.nome);
           }
         }
@@ -5933,7 +5933,7 @@
       let epi = 0;
       colabs.forEach(c => {
         if ((c.vinculo||'').includes("CLT") || (c.vinculo||'').includes("Próprio")) clt++;
-        else terc++;
+        else if (/terc|sub/i.test(c.vinculo||'')) terc++;
         if (c.epis && c.epis.length > 5) epi++;
       });
 
@@ -6093,7 +6093,7 @@
       const tbody = document.getElementById("tbody-auditoria-ponto");
       if (!tbody) return;
 
-      const dataFiltro = document.getElementById("ponto-data-filtro") ? document.getElementById("ponto-data-filtro").value : new Date().toISOString().split("T")[0];
+      const dataFiltro = document.getElementById("ponto-data-filtro") ? document.getElementById("ponto-data-filtro").value : new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0];
       const colabs = getColaboradoresDb();
       // Lista de colaboradores ativos
       const colabsAtivos = colabs.filter(c => c.status !== "Inativo");
@@ -6324,7 +6324,7 @@
     }
 
     function salvarFrequenciaDiariaDoDia() {
-      const dataFiltro = document.getElementById("ponto-data-filtro") ? document.getElementById("ponto-data-filtro").value : new Date().toISOString().split("T")[0];
+      const dataFiltro = document.getElementById("ponto-data-filtro") ? document.getElementById("ponto-data-filtro").value : new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0];
       const rows = document.querySelectorAll("#tbody-auditoria-ponto tr");
       if (rows.length === 0) return;
 
@@ -7486,7 +7486,7 @@
       let colab = null;
       let itensParaRecibo = [];
       let numRecibo = "REC-" + Date.now().toString().slice(-6);
-      let dataRecibo = new Date().toISOString().split("T")[0];
+      let dataRecibo = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0];
       let motivoGeral = "Fornecimento de EPIs e Uniforme Regulamentar";
 
       // Verifica se o ID passado é de uma distribuição específica
@@ -7766,7 +7766,7 @@
 
       // Preenche campos do formulário de anexo
       document.getElementById("fc-anexo-descricao").value = `Recibo de Entrega EPI e Uniforme - ${colab.funcao}`;
-      document.getElementById("fc-anexo-data").value = new Date().toISOString().split("T")[0];
+      document.getElementById("fc-anexo-data").value = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0];
       limparPreviewAnexo();
 
       // Renderiza recibos já anexados e histórico de EPIs
@@ -8742,7 +8742,7 @@
         btnPontoHoje.addEventListener("click", () => {
           const inp = document.getElementById("ponto-data-filtro");
           if (inp) {
-            inp.value = new Date().toISOString().split("T")[0];
+            inp.value = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0];
             renderAuditoriaPonto();
           }
         });
@@ -8888,7 +8888,7 @@
           if (!colab) return;
 
           const desc = document.getElementById("fc-anexo-descricao").value.trim() || "Recibo de Entrega EPI/Uniforme Assinado";
-          const dataDoc = document.getElementById("fc-anexo-data").value || new Date().toISOString().split("T")[0];
+          const dataDoc = document.getElementById("fc-anexo-data").value || new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0];
 
           if (!colab.recibosAssinados) colab.recibosAssinados = [];
 
@@ -8896,7 +8896,7 @@
             id: "ANX-" + Date.now(),
             titulo: desc,
             dataDoc: dataDoc,
-            dataUpload: new Date().toISOString().split("T")[0],
+            dataUpload: new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0],
             arquivoBase64: currentAnexoBase64,
             tipoArquivo: currentAnexoTipo,
             nomeArquivo: currentAnexoNome,
@@ -8986,7 +8986,7 @@
       if (btnAbrirDistEpi) {
         btnAbrirDistEpi.addEventListener("click", () => {
           document.getElementById("form-distribuir-epi").reset();
-          const hoje = new Date().toISOString().split("T")[0];
+          const hoje = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0];
           document.getElementById("de-data").value = hoje;
 
           // Popula colaboradores
@@ -9187,7 +9187,7 @@
       if (btnAbrirAditivo) {
         btnAbrirAditivo.addEventListener("click", () => {
           document.getElementById("form-novo-aditivo").reset();
-          const hoje = new Date().toISOString().split("T")[0];
+          const hoje = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0];
           document.getElementById("ad-data").value = hoje;
           document.getElementById("modal-novo-aditivo").classList.remove("hidden");
         });
@@ -9363,7 +9363,7 @@
         if (e.target && e.target.classList.contains("btn-lancar-falta")) {
           const nomeColab = e.target.dataset.nome;
           atualizarSelectFaltaColab(nomeColab);
-          document.getElementById("rf-data").value = new Date().toISOString().split("T")[0];
+          document.getElementById("rf-data").value = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0];
           document.getElementById("modal-registrar-falta-colab").classList.remove("hidden");
         }
       });
@@ -9530,10 +9530,10 @@
           const funcao = document.getElementById("nc-funcao").value.trim();
           const vinculo = document.getElementById("nc-vinculo").value;
           const obra = document.getElementById("nc-obra").value;
-          const admissao = document.getElementById("nc-admissao").value || new Date().toISOString().split("T")[0];
+          const admissao = document.getElementById("nc-admissao").value || new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0];
           const uniforme = document.getElementById("nc-tam-uniforme").value;
           const bota = document.getElementById("nc-tam-bota").value;
-          const dataEpi = document.getElementById("nc-data-epi").value || new Date().toISOString().split("T")[0];
+          const dataEpi = document.getElementById("nc-data-epi").value || new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0];
           const obs = document.getElementById("nc-obs").value.trim();
 
           let episList = [];
@@ -9644,7 +9644,7 @@
               status: status,
               dataInicio: dataIni,
               dataFim: dataFim,
-              obs: [{ data: new Date().toISOString().split("T")[0], autor: currentLoggedUser ? currentLoggedUser.nome : "Diretoria", texto: "Ordem de serviço e contrato cadastrados no sistema." }],
+              obs: [{ data: new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0], autor: currentLoggedUser ? currentLoggedUser.nome : "Diretoria", texto: "Ordem de serviço e contrato cadastrados no sistema." }],
               itensMedicao: [
                 { item: "01", desc: "Serviços Preliminares e Canteiro", valor: valor * 0.05, ant: 0, mes: 0 },
                 { item: "02", desc: "Estrutura e Alvenarias", valor: valor * 0.45, ant: 0, mes: 0 },
@@ -9893,7 +9893,7 @@
             id: novoPedId,
             obra: obra,
             solicitante: currentLoggedUser ? currentLoggedUser.nome : "Engenheiro da Obra",
-            dataPedido: new Date().toISOString().split("T")[0],
+            dataPedido: new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0],
             prazoEntrega: prazo,
             urgencia: urg,
             status: "Pendente",
@@ -10258,7 +10258,7 @@
         const obra = dadosObras[nomeObra];
         if (obra) {
           obra.obs.unshift({
-            data: new Date().toISOString().split("T")[0],
+            data: new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0],
             autor: `${currentLoggedUser.nome} (${currentLoggedUser.perfil})`,
             texto: txt
           });
@@ -10296,7 +10296,7 @@
     function carregarExemplo() {
       document.getElementById("obra-select").value = "UBS - Guaxupé";
       document.getElementById("input-rdo-num").value = "366";
-      document.getElementById("input-data").value = new Date().toISOString().split("T")[0];
+      document.getElementById("input-data").value = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0];
       document.getElementById("resp-select").value = "Samara Maria Ferreira";
       document.getElementById("clima-manha").value = "Claro";
       document.getElementById("prat-manha").value = "Praticável";
@@ -10707,7 +10707,7 @@
       document.getElementById("p-titulo-doc").textContent = "BOLETIM DE MEDIÇÃO DE OBRA PÚBLICA";
       document.getElementById("p-label-num").textContent = "BOLETIM Nº";
       document.getElementById("p-rdo-num").textContent = "04/2026";
-      document.getElementById("p-data").textContent = formatDate(new Date().toISOString().split("T")[0]);
+      document.getElementById("p-data").textContent = formatDate(new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0]);
       document.getElementById("p-assina-resp").textContent = obra.resp + " (Engenheiro Responsável)";
 
       let rows = "";
@@ -10882,7 +10882,7 @@
       const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(backup, null, 2));
       const downloadAnchor = document.createElement("a");
       downloadAnchor.setAttribute("href", dataStr);
-      downloadAnchor.setAttribute("download", `backup_gestao_martins_${new Date().toISOString().split('T')[0]}.json`);
+      downloadAnchor.setAttribute("download", `backup_gestao_martins_${new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0]}.json`);
       document.body.appendChild(downloadAnchor);
       downloadAnchor.click();
       downloadAnchor.remove();
@@ -10948,7 +10948,7 @@
           vinculo: "Terceirizado / Diarista",
           obra: "UBS - Nova Passos",
           status: "Ativo",
-          admissao: new Date().toISOString().split("T")[0],
+          admissao: new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0],
           bota: "-",
           uniforme: "-",
           dataEpi: "-",
@@ -11239,7 +11239,7 @@
 
     function alternarFeriadoNoDiaAtual() {
       const inp = document.getElementById("ponto-data-filtro");
-      const dataFiltro = inp && inp.value ? inp.value : new Date().toISOString().split("T")[0];
+      const dataFiltro = inp && inp.value ? inp.value : new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0];
       const feriados = getFeriadosPassosDb();
       const freqDb = getFrequenciaDiariaDb();
 
@@ -11287,7 +11287,7 @@
 
       const dataFiltro = document.getElementById("ponto-data-filtro") && document.getElementById("ponto-data-filtro").value
         ? document.getElementById("ponto-data-filtro").value
-        : new Date().toISOString().split("T")[0];
+        : new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0];
 
       const feriados = getFeriadosPassosDb();
       const nomeFeriado = feriados[dataFiltro] || null;
@@ -11536,7 +11536,7 @@
     }
 
     function recalcularSumarioPonto() {
-      const dataFiltro = document.getElementById("ponto-data-filtro") ? document.getElementById("ponto-data-filtro").value : new Date().toISOString().split("T")[0];
+      const dataFiltro = document.getElementById("ponto-data-filtro") ? document.getElementById("ponto-data-filtro").value : new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0];
       const freqDia = getFrequenciaDiariaDb()[dataFiltro] || {};
       const colabsAtivos = getColaboradoresDb().filter(c => c.status !== "Inativo");
       let presentes = 0, faltas = 0, atestados = 0, folgas = 0;
@@ -11553,7 +11553,7 @@
 
     function gravarLinhaPontoNoBanco(tr) {
       if (!tr) return;
-      const dataFiltro = document.getElementById("ponto-data-filtro") ? document.getElementById("ponto-data-filtro").value : new Date().toISOString().split("T")[0];
+      const dataFiltro = document.getElementById("ponto-data-filtro") ? document.getElementById("ponto-data-filtro").value : new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0];
       const colabId = tr.dataset.colabId;
       const colabNome = tr.dataset.colabNome;
       const selDestino = tr.querySelector(".sel-destino-ponto");
@@ -11610,7 +11610,7 @@
     function salvarFrequenciaDiariaDoDia() {
       const rows = document.querySelectorAll("#tbody-auditoria-ponto tr");
       rows.forEach(tr => gravarLinhaPontoNoBanco(tr));
-      const dataFiltro = document.getElementById("ponto-data-filtro") ? document.getElementById("ponto-data-filtro").value : new Date().toISOString().split("T")[0];
+      const dataFiltro = document.getElementById("ponto-data-filtro") ? document.getElementById("ponto-data-filtro").value : new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0];
       renderColaboradoresTable();
       showToast(`✓ Frequência do dia ${formatDate(dataFiltro)} salva e calibrada com sucesso!`);
     }
@@ -11630,7 +11630,7 @@
     }
 
     function replicarUltimoDiaTrabalho() {
-      const dataDestino = document.getElementById("ponto-data-filtro") ? document.getElementById("ponto-data-filtro").value : new Date().toISOString().split("T")[0];
+      const dataDestino = document.getElementById("ponto-data-filtro") ? document.getElementById("ponto-data-filtro").value : new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0];
       const freqDb = getFrequenciaDiariaDb();
       const feriados = getFeriadosPassosDb();
 
@@ -12178,7 +12178,7 @@
       }
 
       if (document.getElementById("fc-anexo-descricao")) document.getElementById("fc-anexo-descricao").value = `Recibo de Entrega EPI e Uniforme - ${colab.funcao}`;
-      if (document.getElementById("fc-anexo-data")) document.getElementById("fc-anexo-data").value = new Date().toISOString().split("T")[0];
+      if (document.getElementById("fc-anexo-data")) document.getElementById("fc-anexo-data").value = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0];
       limparPreviewAnexo();
       renderRecibosAnexados(colab);
       renderHistoricoEpisColab(colab);
@@ -12764,7 +12764,7 @@
           funcao: "Ajudante / Diarista de Canteiro",
           vinculo: "Terceirizado / Diarista",
           status: "Ativo",
-          admissao: new Date().toISOString().split("T")[0],
+          admissao: new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0],
           dataEncerramento: "",
           motivoEncerramento: "",
           cpf: "",
@@ -13616,7 +13616,7 @@
       const colab = colabs.find(c => c.id === currentFichaColabId);
       if (!colab) return;
 
-      const dt = document.getElementById("fc-nova-oc-data") ? document.getElementById("fc-nova-oc-data").value : new Date().toISOString().split("T")[0];
+      const dt = document.getElementById("fc-nova-oc-data") ? document.getElementById("fc-nova-oc-data").value : new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0];
       const tipo = document.getElementById("fc-nova-oc-tipo") ? document.getElementById("fc-nova-oc-tipo").value : "Falta Injustificada";
       const obs = document.getElementById("fc-nova-oc-obs") ? document.getElementById("fc-nova-oc-obs").value.trim() : "";
 
@@ -13697,9 +13697,9 @@
         medido: 0,
         resp: respObra,
         status: "Em Andamento",
-        dataInicio: new Date().toISOString().split("T")[0],
+        dataInicio: new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0],
         dataFim: "2027-06-30",
-        obs: [{ data: new Date().toISOString().split("T")[0], autor: "Diretoria", texto: "Obra cadastrada no sistema." }],
+        obs: [{ data: new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0], autor: "Diretoria", texto: "Obra cadastrada no sistema." }],
         itensMedicao: [
           { item: "01", desc: "Serviços Preliminares e Mobilização", valor: valorObra * 0.1, ant: 0, mes: 0 },
           { item: "02", desc: "Infraestrutura e Superestrutura", valor: valorObra * 0.4, ant: 0, mes: 0 },
@@ -14032,7 +14032,7 @@
       if (!colab) return;
       const inpDataOc = document.getElementById("fc-nova-oc-data");
       if (inpDataOc && !inpDataOc.value) {
-        inpDataOc.value = new Date().toISOString().split("T")[0];
+        inpDataOc.value = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0];
       }
 
       const scan = escanearFrequenciaColaborador(colab);
@@ -14815,7 +14815,7 @@
       const ob = Object.values(dadosObras).find(o => o && o.nome === nomeObra) || dadosObras[nomeObra];
       const dataFimIso = (ob && (ob.dataFim || ob.previsaoConclusao)) ? (ob.dataFim || ob.previsaoConclusao) : "";
       if (!dataFimIso) return { diasRestantes: null, dataFimFormatada: "", textoBadge: "" };
-      const refIso = normalizarDataIso(dataRefStr) !== "0000-00-00" ? normalizarDataIso(dataRefStr) : new Date().toISOString().split("T")[0];
+      const refIso = normalizarDataIso(dataRefStr) !== "0000-00-00" ? normalizarDataIso(dataRefStr) : new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0];
       const dFim = new Date(dataFimIso + "T12:00:00");
       const dRef = new Date(refIso + "T12:00:00");
       const diffDias = Math.ceil((dFim - dRef) / (1000 * 60 * 60 * 24));
@@ -15108,7 +15108,7 @@
     gravarLinhaPontoNoBanco = function(tr) {
       _origGravarLinhaPonto(tr);
       if (!tr) return;
-      const dataFiltro = document.getElementById("ponto-data-filtro") ? document.getElementById("ponto-data-filtro").value : new Date().toISOString().split("T")[0];
+      const dataFiltro = document.getElementById("ponto-data-filtro") ? document.getElementById("ponto-data-filtro").value : new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0];
       const colabId = tr.dataset.colabId;
       const freqDb = getFrequenciaDiariaDb();
       if (freqDb[dataFiltro] && freqDb[dataFiltro][colabId]) {
@@ -15140,7 +15140,7 @@
     renderAuditoriaPonto = function() {
       _origRenderAuditoriaPonto();
       window.renderTop3UsuariosSistema();
-      const dataFiltro = document.getElementById("ponto-data-filtro") ? document.getElementById("ponto-data-filtro").value : new Date().toISOString().split("T")[0];
+      const dataFiltro = document.getElementById("ponto-data-filtro") ? document.getElementById("ponto-data-filtro").value : new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0];
       const freqSalva = getFrequenciaDiariaDb()[dataFiltro] || {};
       const rdosDoDia = getDb().filter(r => normalizarDataIso(r.data) === dataFiltro);
 
@@ -15492,7 +15492,7 @@
       }
       const inpFim = document.getElementById("gestao-input-data-fim-obra");
       if (inpFim && ob.dataFim) inpFim.value = ob.dataFim;
-      const prazo = window.calcularDiasRestantesObra(nomeObra, new Date().toISOString().split("T")[0]);
+      const prazo = window.calcularDiasRestantesObra(nomeObra, new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0]);
       const badgeDias = document.getElementById("g-card-dias-restantes");
       if (badgeDias) badgeDias.textContent = prazo.diasRestantes > 0 ? `Faltam ${prazo.diasRestantes} dias` : "Concluída";
     };
@@ -15657,7 +15657,7 @@
       const form = document.getElementById("form-cadastrar-preco-insumo");
       if (form) form.reset();
       const inpData = document.getElementById("preco-inp-data");
-      if (inpData) inpData.value = new Date().toISOString().split("T")[0];
+      if (inpData) inpData.value = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0];
       const modal = document.getElementById("modal-cadastrar-preco-insumo");
       if (modal) modal.classList.remove("hidden");
     };
@@ -15668,7 +15668,7 @@
       const cat = document.getElementById("preco-inp-categoria").value;
       const un = document.getElementById("preco-inp-unidade").value.trim();
       const val = parseFloat(document.getElementById("preco-inp-valor").value) || 0;
-      const dt = document.getElementById("preco-inp-data").value || new Date().toISOString().split("T")[0];
+      const dt = document.getElementById("preco-inp-data").value || new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0];
       const forn = document.getElementById("preco-inp-fornecedor").value.trim() || "Fornecedor Homologado";
       const rend = document.getElementById("preco-inp-rendimento").value.trim() || "-";
       const dest = document.getElementById("preco-inp-destino").value.trim() || "Todas as Obras";
@@ -15817,7 +15817,7 @@
           const m = parseInt(parts[1], 10);
           const d = parseInt(parts[2], 10);
           if (m === mesAtual) {
-            aniversariantesMes.push({ nome: c.nome, dia: d, hoje: d === diaAtual, tel: c.telefone || '35999887766' });
+            aniversariantesMes.push({ nome: c.nome, dia: d, hoje: d === diaAtual, tel: c.telefone || '' });
             if (d === diaAtual) aniversariantesHoje.push(c.nome);
           }
         }
@@ -18739,7 +18739,7 @@ Envio oficial emitido pelo sistema Construtora Martins.`;
           id: novoPedId,
           obra: obra,
           solicitante: (currentLoggedUser && currentLoggedUser.nome) ? currentLoggedUser.nome : "Engenharia de Obras",
-          dataPedido: new Date().toISOString().split("T")[0],
+          dataPedido: new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0],
           prazoEntrega: prazo,
           urgencia: urg,
           status: "Em Cotação",
@@ -18799,7 +18799,7 @@ Envio oficial emitido pelo sistema Construtora Martins.`;
         document.getElementById("obra-inp-quem-recebe").value = "Construtora & Incorporadora Martins Ltda";
         document.getElementById("obra-inp-dados-bancarios").value = "Sicoob Credpassos · Ag: 3125 · C/C: 12.450-8";
         document.getElementById("obra-inp-valor").value = "";
-        document.getElementById("obra-inp-data-inicio").value = new Date().toISOString().split("T")[0];
+        document.getElementById("obra-inp-data-inicio").value = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0];
         const dtFim = new Date();
         dtFim.setDate(dtFim.getDate() + 180);
         document.getElementById("obra-inp-data-fim").value = dtFim.toISOString().split("T")[0];
@@ -19063,7 +19063,7 @@ Envio oficial emitido pelo sistema Construtora Martins.`;
         id: novoPedId,
         obra: obra,
         solicitante: (currentLoggedUser && currentLoggedUser.nome) ? currentLoggedUser.nome : "Engenharia de Obras",
-        dataPedido: new Date().toISOString().split("T")[0],
+        dataPedido: new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0],
         prazoEntrega: prazo,
         urgencia: urg,
         status: "Em Cotação",
@@ -19126,7 +19126,7 @@ Envio oficial emitido pelo sistema Construtora Martins.`;
         document.getElementById("obra-inp-quem-recebe").value = "Construtora & Incorporadora Martins Ltda";
         document.getElementById("obra-inp-dados-bancarios").value = "Sicoob Credpassos · Ag: 3125 · C/C: 12.450-8";
         document.getElementById("obra-inp-valor").value = "";
-        document.getElementById("obra-inp-data-inicio").value = new Date().toISOString().split("T")[0];
+        document.getElementById("obra-inp-data-inicio").value = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0];
         const dtFim = new Date();
         dtFim.setDate(dtFim.getDate() + 180);
         document.getElementById("obra-inp-data-fim").value = dtFim.toISOString().split("T")[0];
@@ -19234,7 +19234,7 @@ Envio oficial emitido pelo sistema Construtora Martins.`;
         document.getElementById("obra-inp-bairro").value = "";
         document.getElementById("obra-inp-estado").value = "MG - Minas Gerais";
         document.getElementById("obra-inp-cidade").value = "Passos";
-        document.getElementById("obra-inp-data-inicio").value = new Date().toISOString().split("T")[0];
+        document.getElementById("obra-inp-data-inicio").value = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0];
         const dtFim = new Date();
         dtFim.setDate(dtFim.getDate() + 180);
         document.getElementById("obra-inp-data-fim").value = dtFim.toISOString().split("T")[0];
@@ -20580,7 +20580,7 @@ Favor cotar e providenciar entrega no canteiro.`;
 
             movimentos.unshift({
               id: "MOV-" + Date.now() + "-" + Math.floor(Math.random() * 1000),
-              data: new Date().toISOString().split("T")[0],
+              data: new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0],
               tipo: "saida",
               produto: matPrima.nome,
               qtd: consumoKg,
@@ -20597,7 +20597,7 @@ Favor cotar e providenciar entrega no canteiro.`;
           prod.estoqueCompra = Math.max(0, prod.estoqueCompra - consumo);
           movimentos.unshift({
             id: "MOV-" + Date.now() + "-" + Math.floor(Math.random() * 1000),
-            data: new Date().toISOString().split("T")[0],
+            data: new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0],
             tipo: "saida",
             produto: prod.nome,
             qtd: consumo,
@@ -21252,6 +21252,10 @@ Favor cotar e providenciar entrega no canteiro.`;
           <div>
             <label class="block text-xs font-bold text-slate-700 mb-1">Data de Admissão</label>
             <input type="date" id="nc-admissao" class="w-full bg-slate-50 border border-slate-300 rounded-lg p-2 text-xs focus:bg-white focus:border-amber-500">
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-700 mb-1">Data de Nascimento</label>
+            <input type="date" id="nc-nascimento" class="w-full bg-slate-50 border border-slate-300 rounded-lg p-2 text-xs focus:bg-white focus:border-amber-500">
           </div>
         </div>
 
@@ -21974,6 +21978,10 @@ Favor cotar e providenciar entrega no canteiro.`;
           <div>
             <label class="block text-xs font-bold text-slate-700 mb-1">Data de Admissão</label>
             <input type="date" id="edit-colab-admissao" class="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5 text-xs text-slate-800 focus:bg-white focus:border-amber-500">
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-700 mb-1">Data de Nascimento</label>
+            <input type="date" id="edit-colab-nascimento" class="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5 text-xs text-slate-800 focus:bg-white focus:border-amber-500">
           </div>
           <div>
             <label class="block text-xs font-bold text-slate-700 mb-1">Status Contratual</label>

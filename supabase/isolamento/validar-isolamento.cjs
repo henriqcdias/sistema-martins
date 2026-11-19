@@ -12,7 +12,7 @@ const check = (c, m) => { c ? ok++ : falhas++; console.log(c ? '  ok   ' : '  FA
     CREATE TABLE auth.users (id uuid PRIMARY KEY, email text); CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$ SELECT nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;`);
   await db.exec(sql('supabase/producao/base/estrutura_anterior_as_migracoes.sql'));
   await db.exec(`INSERT INTO public.martins_empresas(id, razao_social) VALUES ('${A}','Empresa A'),('${B}','Empresa B');`);
-  for (const d of ['producao', 'v2', 'v3', 'v4', 'v5', 'v6', 'v7', 'v8', 'v9', 'v10', 'v11', 'v12', 'v13', 'v14', 'v15', 'v16']) for (const f of fs.readdirSync(path.join(raiz, `supabase/${d}/migrations`)).sort()) await db.exec(sql(`supabase/${d}/migrations/${f}`));
+  for (const d of ['producao', 'v2', 'v3', 'v4', 'v5', 'v6', 'v7', 'v8', 'v9', 'v10', 'v11', 'v12', 'v13', 'v14', 'v15', 'v16', 'v17']) for (const f of fs.readdirSync(path.join(raiz, `supabase/${d}/migrations`)).sort()) await db.exec(sql(`supabase/${d}/migrations/${f}`));
   await db.exec(`INSERT INTO auth.users(id,email) VALUES ('${MA}','ma@t.com'),('${MB}','mb@t.com'),('${OPB}','opb@t.com'),('${AMBOS}','ambos@t.com');
    INSERT INTO public.martins_perfis(usuario_id, empresa_id, nome) VALUES ('${MA}','${A}','Master A'),('${MB}','${B}','Master B'),('${OPB}','${B}','Operador B'),('${AMBOS}','${A}','Ambos');
    INSERT INTO public.martins_online_acessos(empresa_id, usuario_id, papel, ativo) VALUES ('${A}','${MA}','master',true),('${B}','${MB}','master',true),('${B}','${OPB}','operacional',true),('${A}','${AMBOS}','master',true),('${B}','${AMBOS}','operacional',true);
@@ -57,6 +57,7 @@ const check = (c, m) => { c ? ok++ : falhas++; console.log(c ? '  ok   ' : '  FA
     ['martins_producao_orcamento_estado', [A, id(), id(), 1, 'Aprovado', null]], ['martins_producao_orcamento_converter', [A, id(), id(), 1, true]],
     ['martins_producao_financeiro_relatorios', [A, '2026-01-01', '2026-12-31']], ['martins_producao_extrato_importar', [A, id(), id(), 'ofx', '[{"data":"2026-01-02","valor_centavos":100}]']],
     ['martins_producao_extrato_conciliar', [A, id(), id(), 1, 'baixa', id(), id()]], ['martins_producao_extrato_desconciliar', [A, id(), id(), 1, 'x']],
+    ['martins_producao_rdo_estado', [A, id(), id(), 1, 'aprovado', null]], ['martins_producao_nomes', [A, '{}']],
     ['martins_producao_backup_exportar', [A]], ['martins_producao_backup_importar', [A, id(), '{"formato":"martins-backup","versao_formato":1,"total":1,"checksum":"x","registros":[{}]}']],
   ];
   for (const [nome, args] of alvo) check((await chamar(MB, nome, args)).erro === '42501', `${nome}: recusada para quem é de outra empresa`);

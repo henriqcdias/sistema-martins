@@ -54,3 +54,5 @@ jobs:
         run: node supabase/v15/validar-v15.cjs .
       - name: Contratos v16 (conciliação bancária)
         run: node supabase/v16/validar-v16.cjs .
+      - name: Contratos v17 (RDO aprovado, EPI por recibo, responsável técnico)
+        run: node supabase/v17/validar-v17.cjs .

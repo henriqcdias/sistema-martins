@@ -75,6 +75,7 @@
     gastos_obra: { titulo: 'Gastos da obra', colunas: [], campos: [] },
     relatorios_fin: { titulo: 'Relatórios financeiros', colunas: [], campos: [] },
     extratos_bancarios: { titulo: 'Conciliação bancária', colunas: [], campos: [] },
+    epi_entregas: { titulo: 'Entregas de EPI', colunas: [], campos: [] },
     backup: { titulo: 'Backup e restauração', colunas: [], campos: [] },
     epis: { titulo: 'EPIs e uniformes', colunas: ['codigo', 'nome', 'tamanho', 'estoque_minimo'], campos: [
       ['nome', 'Descrição', 'texto', { obrigatorio: true }], ['codigo', 'Código de referência', 'texto'], ['categoria', 'Categoria', 'texto'],
@@ -186,6 +187,7 @@
     if (aba === 'gastos_obra') return carregarGastosObra();
     if (aba === 'relatorios_fin') return carregarRelatoriosFin();
     if (aba === 'extratos_bancarios') return carregarConciliacao();
+    if (aba === 'epi_entregas') return carregarEpiEntregas();
     if (aba === 'backup') return carregarBackup();
     const linhas = await listarTodos(aba);
     registros = new Map(linhas.map(r => [r.id, r]));
@@ -637,13 +639,13 @@
     clientes: 'Clientes', fornecedores: 'Fornecedores', vendedores: 'Vendedores', motoristas: 'Motoristas', veiculos: 'Veículos', produtos: 'Produtos e materiais', depositos: 'Depósitos',
     centros_custo: 'Centros de custo', contas_bancarias: 'Contas bancárias', despesas: 'Despesas (financeiro)', feriados: 'Feriados', precos_insumo: 'Preços de insumos', epis: 'EPIs e uniformes',
     estoque_movimentos: 'Estoque (movimentações)', pedidos_compra: 'Pedidos de compra', recebimentos_compra: 'Recebimentos de compra', frota_eventos: 'Frota (abastecimento e manutenção)',
-    ausencias: 'Ausências e férias', cotacoes: 'Propostas de cotação', requisicoes_material: 'Requisições de material', contas_receber: 'Contas a receber (vendas)', pedidos_venda: 'Pedidos de venda', extratos_bancarios: 'Extrato bancário (conciliação)' };
+    ausencias: 'Ausências e férias', cotacoes: 'Propostas de cotação', requisicoes_material: 'Requisições de material', contas_receber: 'Contas a receber (vendas)', pedidos_venda: 'Pedidos de venda', extratos_bancarios: 'Extrato bancário (conciliação)', epi_entregas: 'Entregas de EPI (recibos)' };
   // Modelos são só um atalho: preenchem a tela, o Master confere e salva. l = ver, c = criar, e = editar.
   const MODELOS = {
-    'Almoxarife': { estoque_movimentos: 'lce', epis: 'lce', produtos: 'l', depositos: 'l', pedidos_compra: 'l', recebimentos_compra: 'l', requisicoes_material: 'l', obras: 'l', rdos: 'l' },
+    'Almoxarife': { estoque_movimentos: 'lce', epis: 'lce', epi_entregas: 'lce', funcionarios: 'l', produtos: 'l', depositos: 'l', pedidos_compra: 'l', recebimentos_compra: 'l', requisicoes_material: 'l', obras: 'l', rdos: 'l' },
     'Mestre de obras (solicita material pelo celular)': { requisicoes_material: 'lc', obras: 'l', produtos: 'l', depositos: 'l', rdos: 'l' },
     'Engenharia': { obras: 'lce', planejamento: 'lce', rdos: 'lce', requisicoes_material: 'lce', frequencia: 'l', funcionarios: 'l', produtos: 'l', depositos: 'l', estoque_movimentos: 'l', orcamentos: 'l' },
-    'RH / Departamento pessoal': { funcionarios: 'lce', frequencia: 'lce', ausencias: 'lce', epis: 'lce', feriados: 'lce', obras: 'l', rdos: 'l' },
+    'RH / Departamento pessoal': { funcionarios: 'lce', frequencia: 'lce', ausencias: 'lce', epis: 'lce', epi_entregas: 'lce', feriados: 'lce', obras: 'l', rdos: 'l' },
     'Comercial / Vendedor': { clientes: 'lce', vendedores: 'l', orcamentos: 'lce', obras: 'l', contas_receber: 'l', pedidos_venda: 'l' },
     'Financeiro (contas a receber)': { contas_receber: 'lce', clientes: 'l', contas_bancarias: 'l', obras: 'l', orcamentos: 'l' },
     'Financeiro (conciliação bancária)': { extratos_bancarios: 'lce', contas_receber: 'l', despesas: 'l', contas_bancarias: 'l' },
@@ -895,6 +897,136 @@
       el('section', { classe: 'cs-form' }, el('h3', { texto: 'Linhas do extrato' }), el('div', { classe: 'cs-acoes' }, filtro, filtroConta), erroLista, lista));
     desenhar(); mensagem('Conciliação bancária: importe um extrato ou concilie as linhas pendentes.');
   }
+  // ---------- Entregas de EPI e uniformes (v17): um recibo, vários itens ----------
+  const escHtml = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const dataBrEpi = iso => { const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? m[3] + '/' + m[2] + '/' + m[1] : ''; };
+  let pendenteEpi = null;
+  async function enviarRecibo(id, rev, d) {
+    const chave = JSON.stringify([id, rev, d]);
+    if (!pendenteEpi || pendenteEpi.chave !== chave) { const cmd = api.prepare({ empresa, modulo: 'epi_entregas', id: id || crypto.randomUUID(), revisao: rev, dados: d }); pendenteEpi = { chave, op: cmd.operacao }; }
+    const r = await api.send(pendenteEpi.op); pendenteEpi = null; return r;
+  }
+  function imprimirReciboEpi(rec, func) {
+    const emp = vinculo()?.nomeEmpresa || 'Empresa';
+    const linhas = (rec.dados.itens || []).map(i => '<tr><td>' + escHtml(i.codigo || '') + '</td><td>' + escHtml(i.descricao || '') + '</td><td>' + escHtml(i.tamanho || '') + '</td><td style="text-align:right">' + escHtml(i.qtd) + '</td></tr>').join('');
+    const html = '<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Recibo de EPI nº ' + escHtml(rec.dados.numero) + '</title><style>body{font:13px Arial,sans-serif;margin:28px;color:#111}h1{font-size:15px;text-align:center}table{width:100%;border-collapse:collapse;margin:14px 0}th,td{border:1px solid #444;padding:6px;text-align:left}.ass{display:flex;gap:40px;margin-top:60px}.ass div{flex:1;border-top:1px solid #111;text-align:center;padding-top:4px}</style></head><body>'
+      + '<h1>RECIBO E TERMO DE RESPONSABILIDADE DE ENTREGA DE EPI E UNIFORME (NR-06)</h1><p><b>' + escHtml(emp) + '</b></p>'
+      + '<p>Recibo nº <b>' + escHtml(rec.dados.numero) + '</b> · Data da entrega: <b>' + dataBrEpi(rec.dados.data) + '</b>' + (rec.dados.estado === 'cancelado' ? ' · <b>CANCELADO</b>' : '') + '</p>'
+      + '<p>Funcionário: <b>' + escHtml(func?.dados.nome || '') + '</b>' + (func?.dados.funcao ? ' · Função: ' + escHtml(func.dados.funcao) : '') + (rec.dados.motivo ? ' · Motivo: ' + escHtml(rec.dados.motivo) : '') + '</p>'
+      + '<table><thead><tr><th>Código</th><th>Descrição</th><th>Tamanho</th><th style="text-align:right">Qtd.</th></tr></thead><tbody>' + linhas + '</tbody></table>'
+      + '<p>Declaro ter recebido os itens acima em perfeito estado, comprometendo-me a usá-los durante a jornada de trabalho, conservá-los e devolvê-los quando solicitado, conforme a NR-06.</p>'
+      + (rec.dados.observacao ? '<p>Obs.: ' + escHtml(rec.dados.observacao) + '</p>' : '')
+      + '<div class="ass"><div>' + escHtml(func?.dados.nome || 'Funcionário') + '</div><div>Responsável pela entrega</div></div></body></html>';
+    const f = D.createElement('iframe'); f.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0'; f.setAttribute('aria-hidden', 'true'); f.srcdoc = html;
+    f.onload = () => { try { f.contentWindow.focus(); f.contentWindow.print(); } catch (_) { mensagem('Não foi possível abrir a impressão neste navegador.', true); } setTimeout(() => f.remove(), 60000); };
+    D.body.append(f);
+  }
+  async function carregarEpiEntregas() {
+    const corpo = painel.querySelector('[data-cs=corpo]');
+    const [funcs, epis, recibos] = await Promise.all([listarTodos('funcionarios').catch(() => []), listarTodos('epis').catch(() => []), listarTodos('epi_entregas')]);
+    const funcPor = id => funcs.find(f => f.id === id);
+    const ativosF = funcs.filter(f => !/inativ|deslig|encerr/i.test(String(f.dados.status || '')));
+    const ativosE = epis.filter(e => e.dados.ativo !== false);
+    const podeCriar = pode('epi_entregas', 'criar') && gravacao(), podeEditar = pode('epi_entregas', 'editar') && gravacao();
+    let editando = null; // registro em edição
+    const erro = el('p', { classe: 'cs-erro', role: 'alert' });
+    const selFunc = el('select', { id: 'epi-func', 'aria-label': 'Funcionário' }); selFunc.add(new Option('Funcionário…', '')); for (const f of ativosF) selFunc.add(new Option(f.dados.nome + (f.dados.funcao ? ' · ' + f.dados.funcao : ''), f.id));
+    const data = el('input', { id: 'epi-data', type: 'date', value: hojeLocal(), max: hojeLocal(), 'aria-label': 'Data da entrega' });
+    const motivo = el('input', { id: 'epi-motivo', type: 'text', placeholder: 'Motivo (admissão, troca, reposição…)', maxlength: '200', 'aria-label': 'Motivo' });
+    const obs = el('input', { id: 'epi-obs', type: 'text', placeholder: 'Observação (opcional)', maxlength: '500', 'aria-label': 'Observação' });
+    const tbItens = el('tbody', { 'data-epi': 'itens' });
+    const linhaItem = (pre = {}) => {
+      const s = el('select', { 'aria-label': 'EPI ou uniforme', classe: 'epi-item-sel' }); s.add(new Option('EPI / uniforme…', ''));
+      const lista = ativosE.slice(); if (pre.epi_id && !lista.some(e => e.id === pre.epi_id)) { const e = epis.find(x => x.id === pre.epi_id); if (e) lista.push(e); }
+      for (const e of lista) s.add(new Option([e.dados.codigo, e.dados.nome].filter(Boolean).join(' · ') + (e.dados.tamanho ? ' (' + e.dados.tamanho + ')' : ''), e.id));
+      const tam = el('input', { type: 'text', maxlength: '20', placeholder: 'Tamanho', classe: 'epi-item-tam', 'aria-label': 'Tamanho' });
+      const qt = el('input', { type: 'number', min: '1', max: '9999', step: '1', value: String(pre.qtd || 1), classe: 'epi-item-qtd', 'aria-label': 'Quantidade' });
+      s.addEventListener('change', () => { const e = epis.find(x => x.id === s.value); if (e && !tam.value) tam.value = e.dados.tamanho || ''; });
+      if (pre.epi_id) s.value = pre.epi_id; tam.value = pre.tamanho || '';
+      const rem = el('button', { type: 'button', classe: 'cs-secundario', 'data-epi': 'remover', texto: 'Remover', onclick: () => { if (tbItens.children.length > 1) tr.remove(); else erro.textContent = 'O recibo precisa de ao menos um item.'; } });
+      const tr = el('tr', {}, el('td', { 'data-rotulo': 'Item' }, s), el('td', { 'data-rotulo': 'Tamanho' }, tam), el('td', { 'data-rotulo': 'Qtd.' }, qt), el('td', {}, rem));
+      return tr;
+    };
+    const titulo = el('h3', { texto: 'Novo recibo de entrega' });
+    const bSalvar = el('button', { type: 'button', id: 'epi-salvar', classe: 'cs-primario', texto: 'Salvar recibo', disabled: !podeCriar });
+    const bCancelarEdicao = el('button', { type: 'button', id: 'epi-cancelar-edicao', classe: 'cs-secundario', texto: 'Cancelar edição', hidden: true });
+    const limpar = () => { editando = null; titulo.textContent = 'Novo recibo de entrega'; selFunc.value = ''; selFunc.disabled = false; data.value = hojeLocal(); motivo.value = ''; obs.value = ''; tbItens.replaceChildren(linhaItem()); bCancelarEdicao.hidden = true; bSalvar.disabled = !podeCriar; erro.textContent = ''; };
+    const lerItens = () => [...tbItens.children].map(tr => ({ epi_id: tr.querySelector('.epi-item-sel').value, tamanho: tr.querySelector('.epi-item-tam').value.trim() || undefined, qtd: Number(tr.querySelector('.epi-item-qtd').value) }));
+    bSalvar.addEventListener('click', async () => {
+      erro.textContent = '';
+      try {
+        if (!selFunc.value) throw Error('Escolha o funcionário.');
+        const itens = lerItens(); if (itens.some(i => !i.epi_id)) throw Error('Escolha o EPI/uniforme em todas as linhas.');
+        if (itens.some(i => !Number.isInteger(i.qtd) || i.qtd < 1)) throw Error('Quantidade deve ser um número inteiro maior que zero.');
+        bSalvar.disabled = true;
+        const d = { funcionario_id: selFunc.value, data: data.value, itens, motivo: motivo.value.trim() || undefined, observacao: obs.value.trim() || undefined };
+        const r = await enviarRecibo(editando?.id || null, editando ? Number(editando.revisao) : 0, d);
+        const num = (r?.registro?.dados?.numero) ?? '';
+        await carregarAba(); mensagem('Recibo de EPI nº ' + num + ' salvo no servidor (' + itens.length + ' item(ns)).');
+      } catch (e) { erro.textContent = traduzir(e); bSalvar.disabled = !(editando ? podeEditar : podeCriar); }
+    });
+    bCancelarEdicao.addEventListener('click', limpar);
+    const bMais = el('button', { type: 'button', id: 'epi-mais', classe: 'cs-secundario', texto: '+ Adicionar item', onclick: () => tbItens.append(linhaItem()) });
+    tbItens.replaceChildren(linhaItem());
+    const editar = r => {
+      editando = r; titulo.textContent = 'Editando recibo nº ' + r.dados.numero; selFunc.value = r.dados.funcionario_id; selFunc.disabled = true; data.value = r.dados.data; motivo.value = r.dados.motivo || ''; obs.value = r.dados.observacao || '';
+      tbItens.replaceChildren(...(r.dados.itens || []).map(i => linhaItem(i))); bCancelarEdicao.hidden = false; bSalvar.disabled = !podeEditar; erro.textContent = ''; titulo.scrollIntoView?.({ block: 'start' });
+    };
+    const ordenados = recibos.slice().sort((a, b) => Number(b.dados.numero || 0) - Number(a.dados.numero || 0));
+    const filtroF = el('select', { id: 'epi-filtro-func', 'aria-label': 'Filtrar por funcionário' }); filtroF.add(new Option('Todos os funcionários', '')); for (const f of funcs) filtroF.add(new Option(f.dados.nome, f.id));
+    const lista = el('tbody', { 'data-epi': 'lista' });
+    const desenhar = () => {
+      const l = ordenados.filter(r => !filtroF.value || r.dados.funcionario_id === filtroF.value);
+      lista.replaceChildren(...(l.length ? l.map(r => {
+        const f = funcPor(r.dados.funcionario_id), cancelado = r.dados.estado === 'cancelado';
+        return el('tr', { 'data-recibo': String(r.dados.numero) },
+          el('td', { 'data-rotulo': 'Recibo', texto: 'Nº ' + r.dados.numero }), el('td', { 'data-rotulo': 'Data', texto: dataBrEpi(r.dados.data) }), el('td', { 'data-rotulo': 'Funcionário', texto: f?.dados.nome || '—' }),
+          el('td', { 'data-rotulo': 'Itens', texto: (r.dados.itens || []).map(i => i.qtd + '× ' + i.descricao + (i.tamanho ? ' (' + i.tamanho + ')' : '')).join(', ') }),
+          el('td', { 'data-rotulo': 'Situação', texto: cancelado ? 'Cancelado' : 'Entregue' }),
+          el('td', {}, el('button', { type: 'button', classe: 'cs-secundario', 'data-epi': 'imprimir', texto: 'Imprimir recibo', onclick: () => imprimirReciboEpi(r, f) }),
+            !cancelado && pode('epi_entregas', 'editar') ? el('button', { type: 'button', classe: 'cs-secundario', 'data-epi': 'editar', texto: 'Alterar', disabled: !gravacao(), onclick: () => editar(r) }) : null,
+            !cancelado && pode('epi_entregas', 'editar') ? el('button', { type: 'button', classe: 'cs-secundario', 'data-epi': 'cancelar', texto: 'Cancelar recibo', disabled: !gravacao(), onclick: async () => {
+              if (!confirm('Cancelar o recibo nº ' + r.dados.numero + '? Ele continua registrado como cancelado e não pode mais ser alterado.')) return;
+              try { await enviarRecibo(r.id, Number(r.revisao), { ...r.dados, estado: 'cancelado' }); await carregarAba(); mensagem('Recibo nº ' + r.dados.numero + ' cancelado.'); } catch (e) { erro.textContent = traduzir(e); } } }) : null));
+      }) : [el('tr', {}, el('td', { colspan: 6, classe: 'cs-vazio', texto: 'Nenhum recibo de entrega registrado nesta empresa.' }))]));
+    };
+    filtroF.addEventListener('change', desenhar); desenhar();
+    corpo.replaceChildren(
+      pode('epi_entregas', 'criar') ? el('section', { classe: 'cs-form' }, titulo,
+        el('p', { classe: 'cs-aviso', texto: 'Um recibo pode ter vários itens. Cadastre os EPIs e uniformes em "EPIs e uniformes". O saldo físico de EPI ainda não é controlado pelo servidor: aqui fica o registro nominal da entrega (quem recebeu o quê, quando).' }),
+        el('div', { classe: 'cs-acoes' }, selFunc, data, motivo), el('div', { classe: 'cs-rolagem' }, el('table', { classe: 'cs-tabela' }, el('thead', {}, el('tr', {}, ['Item', 'Tamanho', 'Qtd.', ''].map(x => el('th', { texto: x })))), tbItens)),
+        el('div', { classe: 'cs-acoes' }, bMais, obs), el('div', { classe: 'cs-acoes' }, bSalvar, bCancelarEdicao), erro) : el('p', { classe: 'cs-aviso', texto: 'Você pode consultar os recibos, mas não lançar entregas (sem permissão de criar).' }),
+      el('section', { classe: 'cs-form' }, el('h3', { texto: 'Recibos emitidos' }), el('div', { classe: 'cs-acoes' }, filtroF),
+        el('div', { classe: 'cs-rolagem' }, el('table', { classe: 'cs-tabela' }, el('thead', {}, el('tr', {}, ['Recibo', 'Data', 'Funcionário', 'Itens', 'Situação', ''].map(x => el('th', { texto: x })))), lista))));
+    mensagem('Entregas de EPI: ' + recibos.length + ' recibo(s) nesta empresa.');
+  }
+  // Painel do RH ("Uniformes & EPIs"): o código antigo mostrava estoque e entregas de exemplo guardados no navegador.
+  // Aqui entra o painel do servidor; o antigo fica oculto.
+  function montarPainelEpi() {
+    const sub = D.getElementById('subview-uniformes-colab'); if (!sub) return;
+    estilos();
+    let sec = D.getElementById('epi-servidor');
+    if (!sec) {
+      sec = el('section', { id: 'epi-servidor', 'aria-labelledby': 'epi-titulo' }, el('h3', { id: 'epi-titulo', texto: 'Uniformes e EPIs — entregas por recibo' }),
+        el('p', { texto: 'Um recibo pode ter vários itens, é numerado pelo servidor e pode ser alterado depois. Os números abaixo vêm do servidor da empresa ativa.' }),
+        el('div', { classe: 'fin-resumo', 'data-epi': 'resumo' }), el('div', { classe: 'fin-atalhos', 'data-epi': 'atalhos' }));
+      sub.prepend(sec);
+    }
+    for (const f of [...sub.children]) if (f !== sec) f.hidden = true;
+    const at = sec.querySelector('[data-epi=atalhos]'), rs = sec.querySelector('[data-epi=resumo]');
+    at.replaceChildren(...[['epi_entregas', 'Entregas de EPI (recibos)', 'Lançar recibo com vários itens, alterar e imprimir'], ['epis', 'EPIs e uniformes', 'Cadastro dos itens']].filter(([m]) => pode(m, 'ler')).map(([m, t, d]) => el('button', { type: 'button', classe: 'fin-atalho', 'data-epi-abrir': m, onclick: () => abrir(m) }, el('b', { texto: t }), el('span', { texto: d }))));
+    if (!pode('epi_entregas', 'ler')) { rs.replaceChildren(); return; }
+    (async () => {
+      try {
+        await sincronizarSessao();
+        const rec = (await listarTodos('epi_entregas')).filter(r => r.dados.estado !== 'cancelado'), mes = hojeLocal().slice(0, 7), doMes = rec.filter(r => String(r.dados.data || '').startsWith(mes));
+        const pecas = doMes.reduce((s, r) => s + (r.dados.itens || []).reduce((t, i) => t + Number(i.qtd || 0), 0), 0);
+        rs.replaceChildren(el('div', { classe: 'fin-card' }, el('small', { texto: 'Recibos no mês' }), el('strong', { texto: String(doMes.length) }), el('span', { texto: 'entregas a funcionários' })),
+          el('div', { classe: 'fin-card' }, el('small', { texto: 'Peças entregues no mês' }), el('strong', { texto: String(pecas) }), el('span', { texto: 'soma das quantidades' })),
+          el('div', { classe: 'fin-card' }, el('small', { texto: 'Recibos no total' }), el('strong', { texto: String(rec.length) }), el('span', { texto: 'sem contar os cancelados' })));
+      } catch (e) { rs.replaceChildren(el('p', { classe: 'cs-erro', texto: 'Não foi possível consultar as entregas agora.' })); }
+    })();
+  }
   // ---------- Backup e restauração (v13): somente Master ----------
   async function carregarBackup() {
     const corpo = painel.querySelector('[data-cs=corpo]');
@@ -1092,8 +1224,8 @@
     if (!painel) montar();
     painel.hidden = false; D.body.classList.add('cs-aberto');
     try { await sincronizarSessao(); painel.querySelector('[data-cs=empresa]').textContent = (vinculo()?.nomeEmpresa || '') + (master() ? ' · Master' : '') + (gravacao() ? '' : ' · somente leitura'); if (MODULOS[inicial] && pode(inicial, 'ler')) aba = inicial; desenharAbas(); if (aba) await carregarAba();
-      if (preenchimento && !['estoque', 'compras', 'requisicoes', 'usuarios', 'gastos_obra', 'relatorios_fin', 'extratos_bancarios', 'backup'].includes(inicial) && aba !== inicial) { mensagem('O cadastro de ' + (MODULOS[inicial]?.titulo || inicial).toLowerCase() + ' ainda não está liberado para o seu vínculo nesta empresa (ou o módulo não foi habilitado no servidor). Nada foi gravado no navegador.', true); return; }
-      if (preenchimento && !['estoque', 'compras', 'requisicoes', 'usuarios', 'gastos_obra', 'relatorios_fin', 'extratos_bancarios', 'backup'].includes(inicial) && aba === inicial) {
+      if (preenchimento && !['estoque', 'compras', 'requisicoes', 'usuarios', 'gastos_obra', 'relatorios_fin', 'extratos_bancarios', 'epi_entregas', 'backup'].includes(inicial) && aba !== inicial) { mensagem('O cadastro de ' + (MODULOS[inicial]?.titulo || inicial).toLowerCase() + ' ainda não está liberado para o seu vínculo nesta empresa (ou o módulo não foi habilitado no servidor). Nada foi gravado no navegador.', true); return; }
+      if (preenchimento && !['estoque', 'compras', 'requisicoes', 'usuarios', 'gastos_obra', 'relatorios_fin', 'extratos_bancarios', 'epi_entregas', 'backup'].includes(inicial) && aba === inicial) {
         if (!pode(aba, 'criar')) { mensagem('Seu vínculo não tem permissão para cadastrar ' + MODULOS[aba].titulo.toLowerCase() + '. Peça a liberação ao Master.', true); return; }
         abrirFormulario(null, preenchimento);
         mensagem('Este cadastro agora é gravado no servidor e compartilhado com a equipe. Confira os dados trazidos do formulário e clique em Salvar.');
@@ -1168,8 +1300,41 @@
     D.body.append(painel);
     D.addEventListener('keydown', ev => { if (ev.key === 'Escape' && painel && !painel.hidden) fechar(); });
   }
+  // Barra lateral: os itens que ainda abriam telas do código antigo (guardadas no navegador) passam a abrir a função do servidor correspondente.
+  const ROTAS_LATERAIS = [
+    [/setSubtabSuprimentos\('estoque'\)/, () => abrir('estoque')],
+    [/setSubtabSuprimentos\('pedidos'\)/, () => abrir('compras')],
+    [/navegarPeloDrawer\('usuarios'\)/, () => abrir('usuarios')],
+    [/data-nav-servidor="requisicoes"/, () => abrir('requisicoes')],
+    [/data-nav-servidor="financeiro"/, () => { try { W.navegarParaSecao('financeiro'); } catch (_) { /* tela não carregou */ } }],
+  ];
+  function ajustarBarraLateral() {
+    const lista = D.getElementById('drawer-lista-modulos'); if (!lista) return;
+    const base = [...lista.querySelectorAll('button')].find(b => /setSubtabSuprimentos\('estoque'\)/.test(b.getAttribute('onclick') || ''));
+    if (!base || lista.querySelector('[data-nav-servidor]')) return;
+    const novo = (chave, icone, titulo, sub) => {
+      const b = base.cloneNode(true); b.removeAttribute('onclick'); b.setAttribute('data-nav-servidor', chave);
+      const spans = b.querySelectorAll('span'); if (spans[0]) spans[0].textContent = icone; if (spans[1]) spans[1].textContent = titulo; if (spans[2]) spans[2].textContent = sub; return b;
+    };
+    base.after(novo('requisicoes', '📝', 'Requisições de Material', 'Obra'));
+    base.after(novo('financeiro', '💵', 'Financeiro (fluxo, DRE, conciliação)', 'Servidor'));
+  }
+  D.addEventListener('click', ev => {
+    const b = ev.target.closest?.('#drawer-lista-modulos button'); if (!b) return;
+    const chave = (b.getAttribute('onclick') || '') + (b.hasAttribute('data-nav-servidor') ? ' data-nav-servidor="' + b.getAttribute('data-nav-servidor') + '"' : '');
+    const rota = ROTAS_LATERAIS.find(([re]) => re.test(chave)); if (!rota) return;
+    ev.preventDefault(); ev.stopImmediatePropagation();
+    try { W.fecharDrawerMenu?.(); } catch (_) { /* menu já fechado */ }
+    rota[1]();
+  }, true);
+  let epiObservado = false;
+  function observarPainelEpi() {
+    const sub = D.getElementById('subview-uniformes-colab'); if (!sub || epiObservado) return; epiObservado = true;
+    const rodar = () => { if (!sub.classList.contains('hidden') && sub.offsetParent !== null) montarPainelEpi(); };
+    new MutationObserver(rodar).observe(sub, { attributes: true, attributeFilter: ['class', 'style'] }); rodar();
+  }
   function instalarBotao() {
-    montarFinanceiro();
+    montarFinanceiro(); observarPainelEpi(); ajustarBarraLateral();
     const barra = D.getElementById('barra-producao');
     if (!barra || barra.querySelector('[data-cs=abrir]')) return;
     barra.append(el('button', { type: 'button', 'data-cs': 'abrir', texto: 'Cadastros e Despesas', onclick: () => abrir() }));

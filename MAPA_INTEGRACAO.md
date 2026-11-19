@@ -257,3 +257,16 @@ Reproduzidos na tela antiga (navegador real) e corrigidos. Causas encontradas:
 
 Validação: `supabase/v15/validar-v15.cjs` (35), `supabase/v16/validar-v16.cjs` (36), isolamento (71), e2e (223).
 Ordem de aplicação no SQL Editor: v14 → v15 → v16 (v15 exige v10; v16 exige v14). Limites conhecidos: a data de pagamento do fluxo de caixa vem do evento "pago" da auditoria (despesas pagas antes de existir esse histórico caem no vencimento/competência); a conciliação não é automática, o sistema sugere por valor e o usuário confirma.
+
+## Apontamentos do Henrique (18/11/2026) — v17
+
+| # | Apontamento | Causa | Solução |
+|---|---|---|---|
+| 1 | Obras duplicadas / listas diferentes (Dashboard, Gestão, Gerar link) | O código antigo tinha 7 obras de exemplo em vários lugares (`OBRAS_OFICIAIS_SISTEMA_MARTINS`, `MAPA_OBRAS_CANONICAS_FASE2` com contrato e CREA fixos, e `garantirAliasDadosObrasFase2` que gravava cada obra em 3-4 chaves) | As listas viram leitura das obras do servidor (uma entrada por obra); qualquer lista de obras com nomes de exemplo é refeita com as obras do servidor; banner da Gestão não mostra mais "UEMG…"; `resolverObraCanonicaFase2` nunca cai em obra de exemplo |
+| 2 | Não consegue encerrar o RDO | "Aprovar" só mudava uma cópia na memória e dizia "aprovado" (o servidor continuava rascunho); excluir idem | `martins_producao_rdo_estado`: aprova/reabre no servidor (exige serviços e responsável técnico da obra com CREA; guarda quem/quando; histórico e auditoria); RDO aprovado não é editado sem reabrir com motivo; excluir RDO avisa que o histórico é preservado |
+| 3 | Responsável técnico por seleção | Campo de texto | Obra: seleção entre funcionários com CREA (`responsavel_tecnico_id`, nome vem do cadastro); CREA no cadastro do funcionário (campo aparece para funções de engenharia) |
+| 4 | Frequência: salvar individual e ver quem alterou | Só havia "salvar o dia" | Botão Salvar por linha; "Alterado por … em …" (nomes via `martins_producao_nomes`) |
+| 5 | EPI: vários itens por recibo e alterar | Entrega antiga era local (estoque e entregas de exemplo no navegador) | Módulo `epi_entregas`: recibo numerado pelo servidor com vários itens, alterável, cancelável, imprimível; painel do RH mostra números do servidor |
+| 6 | Funções novas no item certo da barra lateral | Ver observação abaixo | — |
+
+Limites: o saldo físico de EPI ainda não é controlado pelo servidor; as sub-abas de Gestão (Obs, Custos, Materiais, Cronograma, Medição) e o Portal ainda trazem painéis do código antigo com dados de exemplo (lista no relatório ao Henrique).

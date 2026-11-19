@@ -1,6 +1,7 @@
 (function(){
  'use strict';
  const W=window,D=document,mods=['funcionarios','obras','planejamento','rdos','frequencia','orcamentos'];
+ const nomes={};let abrirRdoParaEdicao=null;
  const uuid=x=>typeof x==='string'&&/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i.test(x);
  let api=null,empresa=null,geracao=0,ocupado=0,dirty=false,diag={};
  const dados=Object.fromEntries(mods.map(m=>[m,new Map()]));let catalogos={obras:[],funcionarios:[]};
@@ -35,7 +36,7 @@
  function referencia(tipo,id,opcional=false){if(!id&&opcional)return null;if(!uuid(id)||!catalogos[tipo].some(x=>x.id===id))throw Error('Selecione '+(tipo==='obras'?'uma obra':'um funcionário')+' da empresa ativa.');return id;}
  // As cópias para os renderizadores legados não são a fonte dos dados editáveis.
  const seguro=x=>typeof x==='string'?x.replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'’').replaceAll('\\','＼'):Array.isArray(x)?x.map(seguro):x&&typeof x==='object'?Object.fromEntries(Object.entries(x).map(([k,v])=>[k,seguro(v)])):x;
- function listar(m){return [...dados[m].values()].map(r=>({...clone(r.dados),id:r.id,empresaId:r.empresa_id,empresa_id:r.empresa_id,remote_id:r.id,rowVersion:r.revisao,revisao:r.revisao}));}
+ function listar(m){return [...dados[m].values()].map(r=>({...clone(r.dados),id:r.id,empresaId:r.empresa_id,empresa_id:r.empresa_id,remote_id:r.id,rowVersion:r.revisao,revisao:r.revisao,atualizado_por:r.atualizado_por,atualizado_em:r.atualizado_em}));}
  function visao(m){return seguro(listar(m).map(r=>({...r,empresa:contexto()?.vinculos.find(v=>v.empresa_id===r.empresa_id)?.nomeEmpresa||'',...(m==='funcionarios'?{obraId:r.obra_id||null,obra:catalogos.obras.find(o=>o.id===r.obra_id)?.nome||'',funcao:r.funcao||'',vinculo:r.vinculo||'',status:r.status||'Ativo',nascimento:r.dataNascimento||''}:{}),...(m==='orcamentos'?{num:r.numero?'ORC-'+String(r.numero).padStart(4,'0'):'',valorTotal:r.total,status:(!r.status||r.status==='Em Orçamento')?'Em elaboração':r.status,obra:catalogos.obras.find(o=>o.id===r.obra_id)?.nome||'',vendedor:r.vendedorResponsavel||''}:{})})));}
  function tabelaFrequencia(){const out={};for(const r of listar('frequencia')){out[r.data]??={};const p=out[r.data][r.funcionario_id]??={colabId:r.funcionario_id,nome:catalogos.funcionarios.find(x=>x.id===r.funcionario_id)?.nome||'',status:r.situacao,horas:0,he50:0,he100:0,alocacoes:[]};p.horas+=Number(r.horas_normais);p.he50+=Number(r.horas_extras||0);p.obra=catalogos.obras.find(o=>o.id===r.obra_id)?.nome||'';p.obraId=r.obra_id||'';p.rowVersion=r.revisao;p.alocacoes.push(r);const bruto=dados.frequencia.get(r.id);if(bruto){const quem=bruto.criado_por&&bruto.criado_por===contexto()?.uid?(contexto()?.nome||'você'):'outro usuário';p.inseridoPor=quem;p.dataHoraInsercao=bruto.criado_em?new Date(bruto.criado_em).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}):'';p.origem='Frequência (servidor)';}}return seguro(out);}
  // O código antigo copiava a lista de orçamentos/pedidos (agora vinda do servidor) para o navegador. Essas cópias locais
@@ -43,13 +44,14 @@
  try{const original=Storage.prototype.setItem;Storage.prototype.setItem=function(chave,valor){if(this===W.localStorage&&/^cm_(orcamentos_|pedidos_venda_db|previsao_recebimentos_vendas_db|supabase_cloud_tables_v16)/.test(String(chave)))return;return original.call(this,chave,valor);};}catch{}
  // Orçamentos: a lista em memória do código antigo é sempre a do servidor. Sementes de demonstração (UEMG, SENAI…)
  // e cópias locais não conseguem mais se misturar a ela.
+ for(const nome of ['OBRAS_OFICIAIS_SISTEMA_MARTINS','OBRAS_7_OFICIAIS_SISTEMA_MARTINS'])try{Object.defineProperty(W,nome,{configurable:true,enumerable:true,get:()=>catalogos.obras.map(o=>o.nome).filter(Boolean),set:()=>{}});}catch{}
  try{Object.defineProperty(W,'orcamentosComerciaisDb',{configurable:true,enumerable:true,get:()=>visao('orcamentos'),set:()=>{}});}catch{}
  // Listas de funcionários do código antigo: sempre a do servidor (as sementes de 54 funcionários não entram mais).
  try{for(const nome of ['colaboradoresDb','funcionariosDb','colaboradoresOficialDb'])Object.defineProperty(W,nome,{configurable:true,enumerable:true,get:()=>visao('funcionarios'),set:()=>{}});}catch{}
  // O quadro e os indicadores liam uma cópia antiga guardada no navegador (cm_colaboradores_db, com 54 funcionários de exemplo) antes do servidor.
  try{Object.defineProperty(W,'obterQuadroFuncionariosOficialUnico',{configurable:true,enumerable:true,get:()=>()=>visao('funcionarios'),set:()=>{}});}catch{}
  function instalarLeituras(){
-  W.getColaboradoresDb=()=>visao('funcionarios');W.getDb=()=>visao('rdos').map(r=>({...r,num:r.numero,obra:seguro(catalogos.obras.find(o=>o.id===r.obra_id)?.nome||''),obraId:r.obra_id,cliente:seguro(registro('obras',r.obra_id)?.dados.clienteResponsavel||''),resp:r.responsavel||'',status:'Rascunho'}));
+  W.getColaboradoresDb=()=>visao('funcionarios');W.getDb=()=>visao('rdos').map(r=>({...r,num:r.numero,obra:seguro(catalogos.obras.find(o=>o.id===r.obra_id)?.nome||''),obraId:r.obra_id,cliente:seguro(registro('obras',r.obra_id)?.dados.clienteResponsavel||''),resp:(r.status==='aprovado'?r.rt_nome:'')||r.responsavel||'',status:r.status==='aprovado'?'Aprovado':'Rascunho',aprovadoPor:r.status==='aprovado'?(r.aprovado_por_nome||'Usuário')+(r.rt_nome?' · RT '+r.rt_nome+(r.rt_crea?' (CREA '+r.rt_crea+')':''):''):'',creaResp:r.rt_crea||'',dataHoraAprovacao:r.aprovado_em?dataHoraBr(r.aprovado_em):''}));
   W.getFrequenciaDiariaDb=tabelaFrequencia;
   W.obterOrcamentosComerciaisUnificadosV167=()=>visao('orcamentos');
   W.sincronizarEObterColaboradoresReaisV169=()=>({sucesso:true,colaboradores:visao('funcionarios')});
@@ -103,6 +105,7 @@
    const row=s.closest('tr');if(row&&!row.querySelector('.freq-inp-horas')){const input=D.createElement('input');input.type='number';input.min='0';input.max='8';input.step='0.25';input.className='freq-inp-horas w-20 border rounded p-1';input.setAttribute('aria-label','Horas normais de '+(row.dataset.colabNome||'funcionário'));const obra=s.value.startsWith('OBRA:')?s.value.slice(5):null;const atual=listar('frequencia').find(x=>x.funcionario_id===row.dataset.colabId&&x.obra_id===obra&&x.data===(val('ponto-data-filtro')||val('freq-input-data')));input.value=atual?.horas_normais??8;s.after(input);}
 
   }
+  agendarExtras();
   for(const s of D.querySelectorAll('#orc-inp-empresa,#orc-empresa-emitente,#ficha-inp-empresa')){const c=contexto();preencherSelect(s,(c?.vinculos||[]).map(v=>({id:v.empresa_id,nome:v.nomeEmpresa})));s.value=empresa||'';s.disabled=true;}
  }
  function atualizarVisoes(){
@@ -110,7 +113,7 @@
   W.empreendimentosObrasDb=visao('obras');
   W.etapasPlanejamentoObraDb=visao('planejamento');
   // A fonte lexical original é mantida; apenas sua projeção de tela é atualizada.
-  if(typeof dadosObras==='object'&&dadosObras){for(const k of Object.keys(dadosObras))delete dadosObras[k];for(const r of visao('obras'))dadosObras[r.id]={...r,cliente:r.clienteResponsavel||'',resp:r.responsavelTecnico||'',contrato:r.valorContratado||0,medido:0,itensMedicao:r.itensMedicao||[],planilhaRef:r.planilhaRef||[],obs:r.obs||[]};}
+  if(typeof dadosObras==='object'&&dadosObras){for(const k of Object.keys(dadosObras))delete dadosObras[k];for(const r of visao('obras'))dadosObras[r.id]={...r,cliente:r.clienteResponsavel||'',resp:r.responsavelTecnico||'',crea:(catalogos.funcionarios||[]).find(f=>f.id===r.responsavel_tecnico_id)?.crea||registro('funcionarios',r.responsavel_tecnico_id)?.dados.crea||'',contrato:r.valorContratado||0,medido:0,itensMedicao:r.itensMedicao||[],planilhaRef:r.planilhaRef||[],obs:r.obs||[]};}
   for(const name of ['renderColaboradoresTable','filtrarERenderizarQuadroColaboradoresV169','renderListaOrcamentosVendas','renderizarModuloOrcamentosOtimizadoFase24','renderizarPainelPedidosConvertidosUi','renderHistorico','renderAuditoriaPonto'])try{W[name]?.();}catch(error){console.warn('Projeção de tela',name,error.message);}
   seletores();
  }
@@ -159,6 +162,7 @@
   const semLeitura=mods.filter(m=>!perms[m]?.ler);
   const estadoFunc=semLeitura.includes('funcionarios')?'sem_permissao_leitura':causas.funcionarios||causas['catálogo']||(vazios.includes('funcionarios')?'vazio':'ok');
   diag={empresa:e,funcionarios:estadoFunc,falhas:{...causas},semLeitura:[...semLeitura],vazios:[...vazios]};
+  await carregarNomes(e);if(g!==geracao||e!==empresa)return;
   D.body.dataset.empresaProducao='ativa';D.body.dataset.cargaFuncionarios=estadoFunc;atualizarVisoes();resumo();
   const nomeEmpresa=contexto().vinculos.find(x=>x.empresa_id===e)?.nomeEmpresa||e;
   const detalhes=[...new Set(Object.values(causas))].map(c=>ROTULOS[c]);
@@ -209,6 +213,7 @@
   if(ficha&&el('ficha-inp-salario'))dados.salarioBase=num(val('ficha-inp-salario'));
   // Data de nascimento: gravada no servidor; campo vazio limpa o valor anterior.
   if(el(p+'nascimento')){const nasc=val(p+'nascimento');dados.dataNascimento=nasc===''?null:nasc;}
+  if(el(p+'crea')){const c=val(p+'crea').trim();dados.crea=c===''?null:c;}
   if(p==='edit-colab-'){
    // Campos do bloco RH/SST do modal: vazio fica null (limpa o valor anterior na edição).
    const opcional=(chave,campo,conv=x=>x)=>{if(!el(campo))return;const v=val(campo);dados[chave]=v===''?null:conv(v);};
@@ -222,12 +227,12 @@
  }
  async function formularioObra(form){
   const editar=form.id==='form-gestao-obra',id=editar?(form.dataset.registroProducao||val('gestao-obra-select')):null,p=editar?'mo-':'nova-obra-';
-  const d={nome:val(p+'nome'),clienteResponsavel:val(p+'cliente'),valorContratado:num(val(editar?'mo-valor':'nova-obra-valor')),responsavelTecnico:val(p+'resp'),dataInicio:val('mo-data-inicio'),previsaoConclusao:val('mo-data-fim'),situacaoAtual:editar?val('mo-status'):'Em Planejamento'};
+  const d={nome:val(p+'nome'),clienteResponsavel:val(p+'cliente'),valorContratado:num(val(editar?'mo-valor':'nova-obra-valor')),...rtDoCampo(p+'resp'),dataInicio:val('mo-data-inicio'),previsaoConclusao:val('mo-data-fim'),situacaoAtual:editar?val('mo-status'):'Em Planejamento'};
   if(!d.nome||!d.clienteResponsavel||d.valorContratado<0)throw Error('Confira nome, cliente e valor da obra.');
   d.codigo=editar?registro('obras',id)?.dados.codigo:'OBR-'+crypto.randomUUID().slice(0,8).toUpperCase();
   await enviar('obras',d,id,editar?snapshot(form,id,'obras'):0,ehMaster()?{}:{somente:CAMPOS_OBRA_OPERACIONAIS});
  }
- const CAMPOS_OBRA_OPERACIONAIS=['nome','codigo','status','clienteResponsavel','enderecoLocalizacao','responsavelTecnico','encarregado','equipesVinculadas','equipesTerceirizadas','dataInicio','previsaoConclusao','situacaoAtual','descricao'];
+ const CAMPOS_OBRA_OPERACIONAIS=['nome','codigo','status','clienteResponsavel','enderecoLocalizacao','responsavelTecnico','responsavel_tecnico_id','encarregado','equipesVinculadas','equipesTerceirizadas','dataInicio','previsaoConclusao','situacaoAtual','descricao'];
  const ehMaster=()=>contexto()?.vinculos.find(v=>v.empresa_id===empresa)?.papelServidor==='master';
  async function formularioObraCompleta(form){
   const nome=val('obra-inp-nome');if(!nome)throw Error('Informe o nome da obra.');
@@ -240,7 +245,7 @@
   const endereco=[val('obra-inp-logradouro'),val('obra-inp-numero-end'),val('obra-inp-complemento'),val('obra-inp-bairro'),[val('obra-inp-cidade'),val('obra-inp-estado')].filter(Boolean).join('/'),val('obra-inp-cep')].filter(Boolean).join(', ');
   const d={nome,codigo:codigoInformado||existente?.dados.codigo||'OBR-'+crypto.randomUUID().slice(0,8).toUpperCase(),
    status:val('obra-inp-status'),situacaoAtual:val('obra-inp-status'),clienteResponsavel:clienteNome,enderecoLocalizacao:endereco,
-   responsavelTecnico:val('obra-inp-resp'),encarregado:val('obra-inp-resp-obra'),dataInicio:val('obra-inp-data-inicio'),previsaoConclusao:val('obra-inp-data-fim'),
+   ...rtDoCampo('obra-inp-resp'),encarregado:val('obra-inp-resp-obra'),dataInicio:val('obra-inp-data-inicio'),previsaoConclusao:val('obra-inp-data-fim'),
    // Campos adicionais (gravados só pelo Master; o servidor recusa de outros perfis).
    tipo:val('obra-inp-tipo'),visivel:val('obra-inp-visivel'),cliente_id:clienteId,areaM2:val('obra-inp-area')?num(val('obra-inp-area')):null,unidade:val('obra-inp-unidade'),art:val('obra-inp-art'),cei:val('obra-inp-cei'),
    cep:val('obra-inp-cep'),logradouro:val('obra-inp-logradouro'),numero:val('obra-inp-numero-end'),complemento:val('obra-inp-complemento'),bairro:val('obra-inp-bairro'),estado:val('obra-inp-estado'),cidade:val('obra-inp-cidade'),
@@ -258,7 +263,7 @@
  }
  async function formularioRdo(form){
   const id=form.dataset.registroProducao||null,obra=referencia('obras',val('obra-select'));
-  const d={obra_id:obra,data:val('input-data'),numero:id?registro('rdos',id)?.dados.numero:null,status:'rascunho',responsavel:val('resp-select')||contexto().nome,servicos:val('textarea-servicos'),climaManha:val('clima-manha'),pratManha:val('prat-manha'),climaTarde:val('clima-tarde'),pratTarde:val('prat-tarde'),equipamentos:val('textarea-equipamentos'),materiais:val('textarea-materiais'),ocorrencias:val('textarea-ocorrencias'),trabalhadores:trabalhadoresRdo(),fotos:typeof currentFotos!=='undefined'?clone(currentFotos):[]};
+  const d={obra_id:obra,data:val('input-data'),numero:id?registro('rdos',id)?.dados.numero:null,status:'rascunho',responsavel:val('resp-select')||'',servicos:val('textarea-servicos'),climaManha:val('clima-manha'),pratManha:val('prat-manha'),climaTarde:val('clima-tarde'),pratTarde:val('prat-tarde'),equipamentos:val('textarea-equipamentos'),materiais:val('textarea-materiais'),ocorrencias:val('textarea-ocorrencias'),trabalhadores:trabalhadoresRdo(),fotos:typeof currentFotos!=='undefined'?clone(currentFotos):[]};
   if(!d.data||!d.servicos)throw Error('Preencha data e serviços do RDO.');
   const r=await enviar('rdos',d,id,id?snapshot(form,id,'rdos'):0);form.dataset.registroProducao=r.id;form.dataset.revisaoProducao=r.revisao;el('input-rdo-num').value=r.dados.numero;
  }
@@ -350,9 +355,9 @@
   for(const item of itens){const rows=await api.load(e,m,item.r);if(rows.length!==1||Number(rows[0].revisao)<item.v+1)throw Error('Releitura do lote não confirmou a persistência.');}
  }
  // Lê as marcações da tela ANTES do envio: se o servidor pedir a senha (depois do F5), a tela é redesenhada e as marcações não podem se perder.
- function lerFrequenciaDaTela(){
+ function lerFrequenciaDaTela(unica=null){
   const e=requireEmpresa(),data=val('ponto-data-filtro')||val('freq-input-data')||hoje();
-  const rows=[...D.querySelectorAll('#tbody-auditoria-ponto tr[data-colab-id]')].filter(r=>r.dataset.dirty==='true');if(!rows.length)throw Error('Altere ou selecione os apontamentos que deseja salvar.');
+  const rows=unica?[unica]:[...D.querySelectorAll('#tbody-auditoria-ponto tr[data-colab-id]')].filter(r=>r.dataset.dirty==='true');if(!rows.length)throw Error('Altere ou selecione os apontamentos que deseja salvar.');
   const itens=rows.map(row=>{const pessoa=referencia('funcionarios',row.dataset.colabId),destino=row.querySelector('.sel-destino-ponto')?.value||'';if(!destino)throw Error('Escolha obra ou situação para cada linha alterada.');
    const situacao=destino.startsWith('OBRA:')?'presente':destino.replace('STATUS:',''),obra=situacao==='presente'?referencia('obras',destino.slice(5)):null;
    const anterior=listar('frequencia').find(x=>x.funcionario_id===pessoa&&x.data===data&&(x.obra_id||null)===obra);
@@ -373,6 +378,146 @@
  }
  for(const nome of ['salvarFrequenciaLoteColetivaRpcWork','salvarFrequenciaDiariaDoDia','salvarFrequenciaDiariaCompletaFase31'])try{Object.defineProperty(W,nome,{configurable:false,enumerable:true,get:()=>salvarFrequenciaDia,set:()=>{}});}catch{}
  D.addEventListener('click',ev=>{if(ev.target.closest?.('#btn-salvar-frequencia-dia')){ev.preventDefault();ev.stopImmediatePropagation();salvarFrequenciaDia();}},true);
+
+ // ---------- v17: RT por seleção, CREA no cadastro, RDO aprovado pelo servidor, frequência por linha ----------
+ function dataHoraBr(iso){try{return new Date(iso).toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});}catch{return '';}}
+ async function carregarNomes(e){try{const ids=[...new Set([...dados.frequencia.values()].map(r=>r.atualizado_por).filter(uuid))].filter(i=>!nomes[i]);if(!ids.length)return;Object.assign(nomes,await W.MartinsProducaoRpc.nomes({e,ids:ids.slice(0,200)}));}catch{}}
+ // Responsável técnico: funcionário ativo com CREA cadastrado (o nome do cadastro é a verdade; o servidor confere de novo).
+ function candidatosRt(){return (catalogos.funcionarios||[]).filter(f=>f.crea&&String(f.crea).trim()&&!/inativ|deslig|encerr/i.test(String(f.status||'')));}
+ function rtDoCampo(id){
+  const s=el(id);if(!s)return {};if(s.tagName!=='SELECT')return {responsavelTecnico:val(id)};
+  const v=s.value;if(!v)return {};if(v==='__nenhum')return {responsavel_tecnico_id:null,responsavelTecnico:''};
+  const c=candidatosRt().filter(x=>x.nome===v);
+  if(c.length!==1)throw Error(c.length?'Há mais de um funcionário com esse nome e CREA: diferencie os nomes no cadastro.':'Escolha o responsável técnico entre os funcionários com CREA.');
+  return {responsavel_tecnico_id:c[0].id,responsavelTecnico:c[0].nome};
+ }
+ function preencherRt(s,vazioRotulo){
+  const lista=candidatosRt(),assin=JSON.stringify(lista.map(f=>[f.id,f.nome,f.crea]));if(s.dataset.rtAssinatura===assin)return;const prev=s.value;s.dataset.rtAssinatura=assin;
+  s.replaceChildren(new Option(lista.length?vazioRotulo:'Nenhum funcionário com CREA: informe o CREA no cadastro do funcionário',''));
+  for(const f of lista)s.add(new Option(f.nome+' · CREA '+f.crea,f.nome));
+  s.add(new Option('— Sem responsável técnico —','__nenhum'));
+  if([...s.options].some(o=>o.value===prev))s.value=prev;
+ }
+ function camposRtECrea(){
+  for(const id of ['mo-resp','nova-obra-resp','obra-inp-resp']){
+   let s=el(id);if(!s)continue;
+   if(s.tagName==='INPUT'){const n=D.createElement('select');n.id=id;n.className=s.className;n.setAttribute('aria-label','Responsável técnico (funcionário com CREA)');s.replaceWith(n);s=n;}
+   preencherRt(s,'Selecione o responsável técnico (funcionário com CREA)');
+  }
+  for(const p of ['nc-','edit-colab-','ficha-inp-']){
+   const f=el(p+'funcao');if(!f||el(p+'crea'))continue;
+   const box=D.createElement('div'),lab=D.createElement('label'),inp=D.createElement('input');
+   lab.htmlFor=p+'crea';lab.className=f.closest('div')?.querySelector('label')?.className||'block text-xs font-bold text-slate-700 mb-1';lab.textContent='CREA (preencha para poder ser responsável técnico)';
+   inp.type='text';inp.id=p+'crea';inp.maxLength=30;inp.className=f.className;inp.placeholder='Ex.: MG-218450/D';inp.autocomplete='off';
+   box.append(lab,inp);box.dataset.creaBox=p;(f.closest('div')||f.parentElement).after(box);
+   f.addEventListener('input',()=>mostrarCrea(p));
+  }
+  for(const p of ['nc-','edit-colab-','ficha-inp-'])mostrarCrea(p);
+  const g=el('gestao-select-rt-obra');if(g&&g.tagName==='SELECT'){preencherRt(g,'Selecione o responsável técnico');const o=registro('obras',val('gestao-obra-select'));if(o&&g.dataset.rtObra!==o.id+':'+o.revisao){g.dataset.rtObra=o.id+':'+o.revisao;g.value=o.dados.responsavelTecnico||'';}}
+ }
+ // O campo CREA só aparece para quem tem função de engenharia/arquitetura (ou já tem CREA gravado): não pesa nos demais cadastros.
+ function mostrarCrea(p){const f=el(p+'funcao'),c=el(p+'crea'),box=c?.parentElement;if(!f||!c||!box)return;const quer=/engenh|arquitet|t[eé]cnic[oa] em edifica|respons[aá]vel t[eé]cnic/i.test(f.value)||!!c.value;if(box.hidden===quer)box.hidden=!quer;}
+ async function alterarRtDaObra(nome){
+  try{
+   if(!nome)return;const obra=registro('obras',val('gestao-obra-select'));if(!obra)throw Error('Escolha a obra.');
+   const cand=candidatosRt().filter(f=>f.nome===nome);if(nome!=='__nenhum'&&cand.length!==1)throw Error('Escolha o responsável técnico entre os funcionários com CREA.');
+   const d=nome==='__nenhum'?{responsavel_tecnico_id:null,responsavelTecnico:''}:{responsavel_tecnico_id:cand[0].id,responsavelTecnico:cand[0].nome};
+   await comDesbloqueio(()=>enviar('obras',d,obra.id,Number(obra.revisao),ehMaster()?{}:{somente:CAMPOS_OBRA_OPERACIONAIS}));
+   await carregar();aviso('Responsável técnico da obra gravado no servidor.');
+  }catch(error){aviso(error.message||'Não foi possível alterar o responsável técnico.',true);}
+ }
+ for(const [nome,fn] of [['alterarResponsavelGeralObra',alterarRtDaObra],['atualizarSelectRtGestaoObra',nomeObra=>{
+  const o=[...dados.obras.values()].find(x=>x.dados.nome===nomeObra||x.id===nomeObra),nome=o?.dados.responsavelTecnico||'',crea=registro('funcionarios',o?.dados.responsavel_tecnico_id)?.dados.crea||catalogos.funcionarios.find(f=>f.id===o?.dados.responsavel_tecnico_id)?.crea||'';
+  const g=el('gestao-select-rt-obra');if(g&&g.tagName==='SELECT'){preencherRt(g,'Selecione o responsável técnico');g.value=nome;}
+  const disp=el('resp-fixo-display');if(disp)disp.value=nome?(crea?nome+' (CREA '+crea+')':nome):'Responsável técnico não informado';
+  const hid=el('resp-select');if(hid){hid.replaceChildren(new Option(nome||'Responsável técnico não informado',nome));hid.value=nome;}
+ }]])try{Object.defineProperty(W,nome,{configurable:true,enumerable:true,get:()=>fn,set:()=>{}});}catch{}
+ // Qualquer lista de obras com nomes de exemplo (UEMG, UBS, SAAE…) é refeita com as obras do servidor (uma entrada por obra).
+ const OBRA_DE_EXEMPLO=/UEMG|SENAI|Cemei|\bUBS\b|SAAE|\bCRAS\b|Coimbras|Jabace|Córrego São Francisco|Nova Passos|Guaxupé|Alpinópolis|Galpão Industrial|Fábrica Central|OBR-UBS|OBR-UEMG|PÁTIO DE MANUTEN/i;
+ function nomeObraServidor(x){const s=String(x||'').trim();if(!s)return [...dados.obras.values()][0]?.dados.nome||'';const o=dados.obras.get(s);return o?o.dados.nome:s;}
+ try{Object.defineProperty(W,'nomeObraServidor',{configurable:true,enumerable:true,get:()=>nomeObraServidor,set:()=>{}});}catch{}
+ function sanitizarSelectsDeObra(unico=null){
+  if(!contexto()||!empresa)return;
+  const nomesObras=[...dados.obras.values()].map(o=>o.dados.nome).filter(Boolean);
+  for(const s of (unico?[unico]:D.querySelectorAll('select[id*=obra]'))){
+   if(s.closest('#cs-painel'))continue;
+   const opcoes=[...s.options];if(!opcoes.some(o=>OBRA_DE_EXEMPLO.test(o.textContent+o.value)))continue;
+   const prev=s.value,primeira=opcoes[0],mantem=primeira&&(primeira.value===''||/^(selecione|todas|todos)/i.test(primeira.textContent.trim()))?primeira.cloneNode(true):null;
+   s.replaceChildren(...(mantem?[mantem]:[]));
+   for(const n of nomesObras)s.add(new Option(n,n));
+   if([...s.options].some(o=>o.value===prev))s.value=prev;
+  }
+ }
+ // A limpeza das listas de obra NÃO roda a cada mudança da tela (o código antigo refaz as listas e brigaria com ela): roda ao trocar de seção e ao tocar na lista.
+ D.addEventListener('pointerdown',ev=>{const s=ev.target?.closest?.('select[id*=obra]');if(s)sanitizarSelectsDeObra(s);},true);
+ D.addEventListener('focusin',ev=>{const s=ev.target;if(s?.tagName==='SELECT'&&/obra/i.test(s.id))sanitizarSelectsDeObra(s);},true);
+ setInterval(()=>{if(!D.hidden)try{sanitizarSelectsDeObra();}catch{}},2000);
+ function ajustarBannerGestao(){
+  const b=el('lbl-gestao-obra-ativa-nome');if(!b||!contexto()||!empresa)return;
+  if(OBRA_DE_EXEMPLO.test(b.textContent)&&!val('gestao-obra-select'))b.textContent='Selecione a obra';
+ }
+ // Obras canônicas: o código antigo trazia 7 obras de exemplo (UEMG, UBS, SAAE…) com contrato, RT e CREA fixos e ainda duplicava cada obra
+ // em várias chaves (id, nome, apelidos). Agora só existem as obras do servidor, uma entrada por obra (chave = id).
+ const OBRA_VAZIA={id:'',aliases:[],chaveDadosObras:'',nomeExibicao:'(nenhuma obra cadastrada)',empresaId:'',empresaNome:'',cliente:'',responsavelTecnico:'',creaResponsavel:'',dataInicio:'',dataFim:'',contratoBase:0,itensPadraoObra:[]};
+ function metaObra(r){const d=r.dados||{},rt=catalogos.funcionarios?.find(f=>f.id===d.responsavel_tecnico_id);return {id:r.id,aliases:[r.id,d.nome].filter(Boolean),chaveDadosObras:r.id,nomeExibicao:d.nome||'',empresaId:r.empresa_id,empresaNome:contexto()?.vinculos.find(v=>v.empresa_id===r.empresa_id)?.nomeEmpresa||'',cliente:d.clienteResponsavel||'',responsavelTecnico:d.responsavelTecnico||'',creaResponsavel:rt?.crea||'',dataInicio:d.dataInicio||'',dataFim:d.previsaoConclusao||'',contratoBase:Number(d.valorContratado||0),itensPadraoObra:[]};}
+ function resolverObraServidor(x){
+  const metas=[...dados.obras.values()].map(metaObra),entrada=String(x||W.obraSelecionadaGestao||W.obraSelecionadaGestaoId||el('gestao-obra-select')?.value||'').trim(),n=entrada.toLowerCase();
+  const meta=metas.find(m=>m.id===entrada)||metas.find(m=>m.nomeExibicao.toLowerCase()===n)||metas[0]||OBRA_VAZIA;
+  const objeto=(typeof dadosObras==='object'&&dadosObras&&dadosObras[meta.id])||{id:'',nome:meta.nomeExibicao,resp:'',crea:'',itensMedicao:[],obs:[],contrato:0,medido:0};
+  return {meta,obraObj:objeto,chaveCanonica:meta.chaveDadosObras,id:meta.id};
+ }
+ for(const [nome,get] of [['MAPA_OBRAS_CANONICAS_FASE2',()=>[...dados.obras.values()].map(metaObra)],['resolverObraCanonicaFase2',()=>resolverObraServidor],['garantirAliasDadosObrasFase2',()=>()=>{W.dadosObras=W.dadosObras||{};return W.dadosObras;}]])try{Object.defineProperty(W,nome,{configurable:true,enumerable:true,get,set:()=>{}});}catch{}
+ // RDO: aprovar (encerrar) e reabrir são do servidor. Antes o botão só mudava uma cópia na memória e dizia "aprovado".
+ async function rdoEstado(id,estado,motivo=null){
+  const r=registro('rdos',id);if(!r)throw Error('RDO não encontrado nesta empresa. Use Atualizar dados.');
+  await W.MartinsProducaoRpc.rdoEstado({e:requireEmpresa(),op:crypto.randomUUID(),rdo:id,v:Number(r.revisao),estado,motivo});
+  await carregar();try{W.renderHistorico?.();}catch{}
+ }
+ async function aprovarRdo(id){
+  try{
+   const r=registro('rdos',id);if(!r)throw Error('RDO não encontrado nesta empresa. Use Atualizar dados.');
+   if(!confirm('Aprovar (encerrar) o RDO nº '+(r.dados.numero??'')+' de '+(r.dados.data||'')+'? Depois de aprovado ele não pode ser editado, a menos que seja reaberto com motivo.'))return;
+   await rdoEstado(id,'aprovado');aviso('RDO aprovado e gravado no servidor.');
+   const m=el('modal-visualizar-rdo');if(m&&!m.classList.contains('hidden'))try{W.abrirModalVisualizarRdo?.(id);}catch{}
+  }catch(error){aviso((error.code==='40001'?'Outra sessão alterou este RDO. Atualize. ':'')+(error.message||'Não foi possível aprovar o RDO.'),true);}
+ }
+ const reabrindo=new Set();
+ async function reabrirRdo(id){
+  if(reabrindo.has(id))return false;if(registro('rdos',id)&&registro('rdos',id).dados.status!=='aprovado')return true;
+  reabrindo.add(id);try{return await reabrirRdoUma(id);}finally{reabrindo.delete(id);}
+ }
+ async function reabrirRdoUma(id){
+  const m=prompt('Motivo para reabrir o RDO aprovado (obrigatório):');if(!m||!m.trim()){aviso('RDO continua aprovado: informe o motivo para reabrir.',true);return false;}
+  try{await rdoEstado(id,'rascunho',m.trim());aviso('RDO reaberto como rascunho.');return true;}catch(error){aviso(error.message||'Não foi possível reabrir o RDO.',true);return false;}
+ }
+ for(const [nome,fn] of [['aprovarRdoDireto',aprovarRdo],['desaprovarRdoParaEdicao',id=>{reabrirRdo(id).then(ok=>{const m=el('modal-visualizar-rdo');if(ok&&m&&!m.classList.contains('hidden'))try{W.abrirModalVisualizarRdo?.(id);}catch{}});}]])try{Object.defineProperty(W,nome,{configurable:true,enumerable:true,get:()=>fn,set:()=>{}});}catch{}
+ const reabrirLegado=W.reabrirRdoParaEdicaoCompleta; // o carregador de formulário do código antigo; a reabertura de verdade é a do servidor
+ for(const [nome,fn] of [['reabrirRdoParaEdicaoCompleta',id=>{reabrirRdo(id).then(ok=>{if(ok)abrirRdoParaEdicao(id);});}],['excluirRdo',()=>aviso('Diários de obra não são excluídos: o histórico fica preservado. Para corrigir um diário aprovado, reabra com o motivo e edite.',true)]])try{Object.defineProperty(W,nome,{configurable:true,enumerable:true,get:()=>fn,set:()=>{}});}catch{}
+ D.addEventListener('click',ev=>{const b=ev.target.closest?.('.btn-aprovar-card');if(b){ev.preventDefault();ev.stopImmediatePropagation();aprovarRdo(b.dataset.id);}},true);
+ // Frequência: salvar uma pessoa por vez, com a autoria visível (quem alterou e quando).
+ // Os ajustes extras rodam no máximo uma vez a cada 200 ms (o observador de DOM dispara muitas vezes em sequência).
+ let extrasAgendado=null;
+ function agendarExtras(){if(extrasAgendado)return;extrasAgendado=setTimeout(()=>{extrasAgendado=null;try{camposRtECrea();decorarLinhasFrequencia();ajustarBannerGestao();}catch(error){console.warn('Ajustes extras',error.message);}},200);}
+ function decorarLinhasFrequencia(){
+  const dia=val('ponto-data-filtro')||val('freq-input-data')||hoje();
+  const linhasPonto=D.querySelectorAll('#tbody-auditoria-ponto tr[data-colab-id]');if(!linhasPonto.length)return;
+  const freqDoDia=listar('frequencia').filter(x=>x.data===dia);
+  for(const row of linhasPonto){
+   const sel=row.querySelector('.sel-destino-ponto');if(!sel)continue;
+   let b=row.querySelector('.btn-salvar-linha-ponto');
+   if(!b){b=D.createElement('button');b.type='button';b.className='btn-salvar-linha-ponto ml-1 px-2 py-1 rounded bg-slate-900 text-amber-400 text-[11px] font-bold';b.textContent='Salvar';b.setAttribute('aria-label','Salvar só '+(row.dataset.colabNome||'este funcionário'));(row.querySelector('.freq-inp-horas')||sel).after(b);}
+   let info=row.querySelector('.freq-autor');if(!info){info=D.createElement('div');info.className='freq-autor text-[10px] text-slate-500';info.setAttribute('role','status');b.after(info);}
+   const doDia=freqDoDia.filter(x=>x.funcionario_id===row.dataset.colabId).sort((a,c)=>String(c.atualizado_em).localeCompare(String(a.atualizado_em)))[0];
+   const texto=row.dataset.dirty==='true'?'Alteração ainda não salva':doDia?'Alterado por '+(nomes[doDia.atualizado_por]||'usuário')+' em '+dataHoraBr(doDia.atualizado_em):'Ainda não salvo neste dia';
+   if(info.textContent!==texto)info.textContent=texto;
+  }
+ }
+ async function salvarLinhaFrequencia(row){
+  if(ocupado)return aviso('Aguarde a operação em andamento.',true);
+  try{const pre=lerFrequenciaDaTela(row);await comDesbloqueio(()=>frequencia(pre));await carregar();try{W.renderAuditoriaPonto?.();}catch{}aviso('Frequência de '+(row.dataset.colabNome||'funcionário')+' salva no servidor e relida.');}
+  catch(error){aviso(error.message||'Não foi possível salvar a frequência.',true);}
+ }
+ D.addEventListener('click',ev=>{const b=ev.target.closest?.('.btn-salvar-linha-ponto');if(b){ev.preventDefault();ev.stopImmediatePropagation();salvarLinhaFrequencia(b.closest('tr'));}},true);
  // RDO ← Frequência: traz para o diário quem foi lançado como PRESENTE nessa obra e nesse dia (horas da frequência), sem duplicar quem já está na equipe.
  function equipeDaFrequencia(){
   const obra=val('obra-select'),dia=val('input-data');
@@ -429,15 +574,16 @@
   W.salvarEdicaoColaboradorModal=()=>submeter(el('form-editar-colaborador'));
   W.salvarNovoOrcamentoVendaForm=event=>{event?.preventDefault();return submeter(el('form-novo-orcamento-venda'));};
   W.salvarFrequenciaDiariaDoDia=()=>comDesbloqueio(frequencia).catch(x=>mensagem(x.message,true));
-  W.salvarRdo=(status)=>{if(status&&status.toLowerCase()!=='rascunho'){mensagem('Aprovação e assinatura exigem contrato próprio. O RDO operacional é salvo como rascunho.',true);return;}return submeter(el('form-rdo'));};
-  const oldEdit=W.abrirModalEditarColaborador;W.abrirModalEditarColaborador=id=>{oldEdit?.(id);const r=registro('funcionarios',id);if(!r)return;const f=el('form-editar-colaborador');f.dataset.registroProducao=id;f.dataset.revisaoProducao=r.revisao;for(const [field,key]of [['nome','nome'],['cpf','cpf'],['rg','rg'],['funcao','funcao'],['vinculo','vinculo'],['admissao','dataAdmissao'],['nascimento','dataNascimento'],['status','status'],['obra','obra_id'],['obs','obs'],['salario','salarioBase'],['tipo-pix','tipoChavePix'],['pix','chavePix'],['anexo-documento','anexoDocumento'],['aso-venc','asoValidade'],['cnh-validade','cnhValidade'],['nr10-venc','nr10Validade'],['nr18-venc','nr18Validade'],['nr35-venc','nr35Validade'],['encerramento','dataEncerramento'],['motivo-encerramento','motivoEncerramento']])if(el('edit-colab-'+field))el('edit-colab-'+field).value=r.dados[key]??'';};
+  W.salvarRdo=(status)=>{if(status&&status.toLowerCase()!=='rascunho'){mensagem('Salve como rascunho e use o botão Aprovar do histórico para encerrar o RDO.',true);return;}return submeter(el('form-rdo'));};
+  const oldEdit=W.abrirModalEditarColaborador;W.abrirModalEditarColaborador=id=>{oldEdit?.(id);const r=registro('funcionarios',id);if(!r)return;const f=el('form-editar-colaborador');f.dataset.registroProducao=id;f.dataset.revisaoProducao=r.revisao;for(const [field,key]of [['nome','nome'],['cpf','cpf'],['rg','rg'],['funcao','funcao'],['vinculo','vinculo'],['admissao','dataAdmissao'],['nascimento','dataNascimento'],['status','status'],['obra','obra_id'],['obs','obs'],['crea','crea'],['salario','salarioBase'],['tipo-pix','tipoChavePix'],['pix','chavePix'],['anexo-documento','anexoDocumento'],['aso-venc','asoValidade'],['cnh-validade','cnhValidade'],['nr10-venc','nr10Validade'],['nr18-venc','nr18Validade'],['nr35-venc','nr35Validade'],['encerramento','dataEncerramento'],['motivo-encerramento','motivoEncerramento']])if(el('edit-colab-'+field))el('edit-colab-'+field).value=r.dados[key]??'';};
   const oldFicha=W.abrirFichaColaborador;W.abrirFichaColaborador=id=>{
     oldFicha?.(id);const r=registro('funcionarios',id),f=el('form-editar-ficha-colab-estab');if(!r||!f)return;f.dataset.registroProducao=id;f.dataset.revisaoProducao=r.revisao;
-    for(const [field,key]of [['nome','nome'],['cpf','cpf'],['funcao','funcao'],['admissao','dataAdmissao'],['nascimento','dataNascimento'],['salario','salarioBase']])if(el('ficha-inp-'+field))el('ficha-inp-'+field).value=r.dados[key]??'';
+    for(const [field,key]of [['nome','nome'],['cpf','cpf'],['funcao','funcao'],['admissao','dataAdmissao'],['nascimento','dataNascimento'],['crea','crea'],['salario','salarioBase']])if(el('ficha-inp-'+field))el('ficha-inp-'+field).value=r.dados[key]??'';
     if(el('ficha-inp-obra')?.tagName!=='SELECT'){const old=el('ficha-inp-obra');if(old){const select=D.createElement('select');select.id=old.id;select.className=old.className;old.replaceWith(select);}}
     seletores();if(el('ficha-inp-obra'))el('ficha-inp-obra').value=r.dados.obra_id||'';
   };
-  const oldRdo=W.carregarRdoParaEdicao;W.carregarRdoParaEdicao=id=>{oldRdo?.(id);const r=registro('rdos',id);if(!r)return;const f=el('form-rdo');f.dataset.registroProducao=id;f.dataset.revisaoProducao=r.revisao;el('obra-select').value=r.dados.obra_id;};
+  const oldRdo=W.carregarRdoParaEdicao;abrirRdoParaEdicao=id=>{(reabrirLegado||oldRdo)?.(id,{justificativa:'RDO carregado para edição direta.'});const r=registro('rdos',id);if(!r)return;const f=el('form-rdo');f.dataset.registroProducao=id;f.dataset.revisaoProducao=r.revisao;el('obra-select').value=r.dados.obra_id;try{W.atualizarSelectRtGestaoObra?.(catalogos.obras.find(o=>o.id===r.dados.obra_id)?.nome||'');}catch{}};
+  W.carregarRdoParaEdicao=id=>{const r0=registro('rdos',id);if(r0?.dados.status==='aprovado'){reabrirRdo(id).then(ok=>{if(ok)abrirRdoParaEdicao(id);});return;}abrirRdoParaEdicao(id);};
   for(const b of D.querySelectorAll('header button'))if(/Nuvem Sincronizada/.test(b.textContent))b.hidden=true;
   if(el('btn-salvar-rdo'))el('btn-salvar-rdo').textContent='Salvar rascunho no Supabase';
   if(el('input-rdo-num')){el('input-rdo-num').required=false;el('input-rdo-num').readOnly=true;el('input-rdo-num').placeholder='Automático no servidor';}

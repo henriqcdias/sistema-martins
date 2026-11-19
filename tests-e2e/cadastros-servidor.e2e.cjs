@@ -29,7 +29,7 @@ async function banco() {
     CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$ SELECT nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;`);
   await db.exec(sql('supabase/producao/base/estrutura_anterior_as_migracoes.sql'));
   await db.exec(`INSERT INTO public.martins_empresas(id, razao_social) VALUES ('${E}', 'Construtora Martins - cadastro inicial');`);
-  for (const d of ['supabase/producao/migrations', 'supabase/v2/migrations', 'supabase/v3/migrations', 'supabase/v4/migrations', 'supabase/v5/migrations', 'supabase/v6/migrations', 'supabase/v7/migrations', 'supabase/v8/migrations', 'supabase/v9/migrations', 'supabase/v10/migrations', 'supabase/v11/migrations', 'supabase/v12/migrations', 'supabase/v13/migrations', 'supabase/v14/migrations', 'supabase/v15/migrations', 'supabase/v16/migrations'])
+  for (const d of ['supabase/producao/migrations', 'supabase/v2/migrations', 'supabase/v3/migrations', 'supabase/v4/migrations', 'supabase/v5/migrations', 'supabase/v6/migrations', 'supabase/v7/migrations', 'supabase/v8/migrations', 'supabase/v9/migrations', 'supabase/v10/migrations', 'supabase/v11/migrations', 'supabase/v12/migrations', 'supabase/v13/migrations', 'supabase/v14/migrations', 'supabase/v15/migrations', 'supabase/v16/migrations', 'supabase/v17/migrations'])
     for (const f of fs.readdirSync(path.join(raiz, d)).sort()) await db.exec(sql(d + '/' + f));
   const [M, L, MO] = Object.values(USUARIOS);
   await db.exec(`INSERT INTO auth.users VALUES ('${M}','master@teste.invalid'),('${L}','lancador@teste.invalid'),('${MO}','mestre@teste.invalid');
@@ -39,7 +39,7 @@ async function banco() {
   return db;
 }
 
-const TIPOS = { e: 'uuid', r: 'uuid', apos: 'uuid', op: 'uuid', v: 'bigint', limite: 'integer', d: 'jsonb', itens: 'jsonb', de: 'date', ate: 'date', m: 'text', estado: 'text', motivo: 'text', tipo: 'text', produto: 'uuid', origem: 'uuid', requisicao: 'uuid', recebimento: 'uuid', backup: 'jsonb', orcamento: 'uuid', aprovar_antes: 'boolean', usuario: 'uuid', ativo: 'boolean', email: 'text', nome: 'text', conta: 'uuid', valor: 'bigint', data: 'date', conta_bancaria: 'uuid', obs: 'text', baixa: 'uuid', destino: 'uuid', qtd: 'bigint', ref: 'uuid', pedido: 'uuid', deposito: 'uuid', documento: 'jsonb', obra: 'uuid', rdo: 'uuid', consumo: 'uuid', parcelas: 'integer', primeiro_vencimento: 'date', intervalo_dias: 'integer', linha: 'uuid', linhas: 'jsonb', formato: 'text', alvo: 'uuid' };
+const TIPOS = { e: 'uuid', r: 'uuid', apos: 'uuid', op: 'uuid', v: 'bigint', limite: 'integer', d: 'jsonb', itens: 'jsonb', de: 'date', ate: 'date', m: 'text', estado: 'text', motivo: 'text', tipo: 'text', produto: 'uuid', origem: 'uuid', requisicao: 'uuid', recebimento: 'uuid', backup: 'jsonb', orcamento: 'uuid', aprovar_antes: 'boolean', usuario: 'uuid', ativo: 'boolean', email: 'text', nome: 'text', conta: 'uuid', valor: 'bigint', data: 'date', conta_bancaria: 'uuid', obs: 'text', baixa: 'uuid', destino: 'uuid', qtd: 'bigint', ref: 'uuid', pedido: 'uuid', deposito: 'uuid', documento: 'jsonb', obra: 'uuid', rdo: 'uuid', consumo: 'uuid', parcelas: 'integer', primeiro_vencimento: 'date', intervalo_dias: 'integer', linha: 'uuid', linhas: 'jsonb', formato: 'text', alvo: 'uuid', ids: 'uuid[]' };
 async function supabase(db, route) {
   const req = route.request(), url = new URL(req.url());
   const json = (status, body) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
@@ -540,6 +540,8 @@ async function novo(page, campos) {
     check(await pm2.$eval('#cs-tipo', n => n.value) === 'abastecimento' && await pm2.$eval('#cs-km', n => n.value) === '15000' && await pm2.$eval('#cs-posto', n => n.value) === 'Posto QA', 'o formulário antigo de abastecimento abre o cadastro de frota do servidor já preenchido');
     await pm2.selectOption('#cs-veiculo_id', VEIC); await preencherData('#cs-data', '2026-11-10');
     await pm2.click('#cs-painel button:text-is("Salvar no servidor")');
+    await pm2.waitForSelector('#cs-painel td:has-text("E2E1A11")', { timeout: 8000 }).catch(async () => console.log('DBG', await pm2.evaluate(() => [...document.querySelectorAll('#cs-painel .cs-erro,[data-cs=status]')].map(n => n.textContent).join(' | ')), '| dialogs', await pm2.evaluate(() => [...document.querySelectorAll('dialog[open]')].map(d => d.innerText.slice(0, 80)).join('|'))));
+    if (await pm2.$('dialog[open] input[type=password]')) { await pm2.fill('dialog[open] input[type=password]', 'senha-sintetica'); await pm2.click('dialog[open] button[type=submit]'); }
     await pm2.waitForSelector('#cs-painel td:has-text("E2E1A11")');
     const ab = (await db.query(`SELECT dados FROM martins_producao_v1.registros WHERE modulo='frota_eventos'`)).rows;
     check(ab.length === 1 && ab[0].dados.litros_milli === 40000 && ab[0].dados.valor_centavos === 28000, 'abastecimento gravado no servidor: 40 L (40000 milésimos) e R$ 280,00 (28000 centavos)');
@@ -740,7 +742,7 @@ async function novo(page, campos) {
 
     console.log('Orçamento (v14): listas do servidor, número, lista atualizada, conversão em um único pedido');
     await db.query(`INSERT INTO martins_producao_v1.registros(empresa_id,modulo,id,revisao,dados,criado_por,atualizado_por) VALUES ($1,'vendedores','00000000-0000-4000-8000-0000000000f7',1,$2::jsonb,$3,$3)`, [E, JSON.stringify({ nome: 'Vendedor QA Orçamento', ativo: true }), M]);
-    pm2.on('dialog', d => d.type() === 'prompt' ? d.accept(d.defaultValue()) : d.accept());
+    pm2.on('dialog', d => d.type() === 'prompt' ? d.accept(/Motivo/i.test(d.message()) ? 'ajuste combinado no teste' : d.defaultValue()) : d.accept());
     await pm2.evaluate(() => window.MartinsOperacional.carregar());
     await pm2.evaluate(() => window.abrirModalNovoOrcamentoVenda());
     await pm2.waitForSelector('#orc-select-cliente-cadastrado');
@@ -925,6 +927,62 @@ async function novo(page, campos) {
     check(!/Taiane|CREA-MG 218/.test(histTxt) && (rtObra.rt ? new RegExp(rtObra.rt.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).test(histTxt) : /Responsável técnico não informado/.test(histTxt)), 'o Histórico mostra o responsável técnico CADASTRADO na obra' + (rtObra.rt ? ' (' + rtObra.rt + ')' : ' ou "não informado"') + ', nunca Taiane/CREA inventados');
     check(rtObra.fim ? /Faltam|Prazo|Obra concluída/.test(histTxt) : !/Faltam \d+ dias p\/ término/.test(histTxt), 'o prazo de término só aparece se a obra tem data de conclusão cadastrada');
     check(pm2.erros.length === 0, 'nenhuma exceção JavaScript em Frequência/RDO' + (pm2.erros.length ? ': ' + pm2.erros.slice(0, 3).join(' | ') : ''));
+
+    console.log('Apontamentos do Henrique (v17): listas de obras, RT por seleção, RDO aprovado, frequência por linha, EPI com vários itens');
+    const senhaV17 = async () => { if (await pm2.$('dialog[open] input[type=password]')) { await pm2.fill('dialog[open] input[type=password]', 'senha-sintetica'); await pm2.click('dialog[open] button[type=submit]'); } };
+    const nomesObrasSrv = (await db.query(`SELECT dados->>'nome' n FROM martins_producao_v1.registros WHERE modulo='obras' AND empresa_id=$1`, [E])).rows.map(r => r.n).sort();
+    check(await pm2.evaluate(n => JSON.stringify([...window.OBRAS_OFICIAIS_SISTEMA_MARTINS].sort()) === JSON.stringify(n) && JSON.stringify([...window.OBRAS_7_OFICIAIS_SISTEMA_MARTINS].sort()) === JSON.stringify(n), nomesObrasSrv), 'as listas de obras do código antigo (gerar link, pedidos etc.) são exatamente as obras do servidor');
+    for (const s of ['gestao', 'suprimentos', 'colaboradores', 'portal']) { await pm2.evaluate(x => window.navegarParaSecao(x), s); await pm2.waitForTimeout(2600); }
+    check(await pm2.evaluate(() => [...document.querySelectorAll('select[id*=obra]')].filter(s => !s.closest('#cs-painel')).every(s => ![...s.options].some(o => /UEMG|SENAI|Cemei|\bUBS\b|SAAE|\bCRAS\b|Nova Passos|Guaxupé/.test(o.textContent)))), 'nenhuma lista de obras mostra obras de exemplo (UEMG, UBS, SAAE…)');
+    const engId = '00000000-0000-4000-8000-0000000000f1';
+    await db.query(`INSERT INTO martins_producao_v1.registros(empresa_id,modulo,id,revisao,dados,criado_por,atualizado_por) VALUES ($1,'funcionarios',$2,1,$3::jsonb,$4,$4)`, [E, engId, JSON.stringify({ nome: 'Eng QA Responsável', cpf: '390.533.447-05', funcao: 'Engenheira', crea: 'MG-123456/D', status: 'Ativo' }), '11111111-1111-4111-8111-111111111111']);
+    await pm2.evaluate(() => window.MartinsOperacional.carregar()); await pm2.waitForTimeout(1500);
+    await pm2.evaluate(() => window.navegarParaSecao('gestao')); await pm2.waitForTimeout(600);
+    await pm2.selectOption('#gestao-obra-select', obraRdo); await pm2.waitForTimeout(800);
+    check(await pm2.evaluate(() => ['mo-resp', 'nova-obra-resp', 'obra-inp-resp', 'gestao-select-rt-obra'].every(i => document.getElementById(i)?.tagName === 'SELECT')) && await pm2.$eval('#gestao-select-rt-obra', n => [...n.options].some(o => /Eng QA Responsável · CREA MG-123456\/D/.test(o.textContent)) && ![...n.options].some(o => /João|Operário|Funcionário Fictício/.test(o.textContent))), 'o responsável técnico é uma lista só de funcionários com CREA (nos formulários da obra e na Gestão), não um campo de texto');
+    await pm2.selectOption('#gestao-select-rt-obra', 'Eng QA Responsável'); await pm2.waitForTimeout(1200); await senhaV17(); await pm2.waitForTimeout(1500);
+    const obraRt = (await db.query(`SELECT dados->>'responsavelTecnico' n, dados->>'responsavel_tecnico_id' i FROM martins_producao_v1.registros WHERE modulo='obras' AND id=$1`, [obraRdo])).rows[0];
+    check(obraRt.n === 'Eng QA Responsável' && obraRt.i === engId, 'escolher o responsável técnico grava o funcionário (id) na obra, no servidor');
+    await pm2.evaluate(() => window.navegarParaSecao('historico')); await pm2.waitForTimeout(1000);
+    await pm2.click('#view-historico button:visible:has-text("Aprovar")'); await pm2.waitForTimeout(2000); await senhaV17(); await pm2.waitForTimeout(1500);
+    const rdoAp = (await db.query(`SELECT revisao, dados FROM martins_producao_v1.registros WHERE modulo='rdos' AND dados->>'obra_id'=$1 AND dados->>'data'=$2`, [obraRdo, hojeRdo])).rows[0];
+    check(rdoAp.dados.status === 'aprovado' && rdoAp.dados.aprovado_por_nome === 'Master Teste' && rdoAp.dados.rt_crea === 'MG-123456/D', 'Aprovar encerra o RDO no servidor (quem aprovou, quando, RT com CREA); antes só aparecia "aprovado" na tela');
+    check(await pm2.$eval('#view-historico', n => /Aprovado/.test(n.innerText) && /Eng QA Responsável/.test(n.innerText) && /MG-123456\/D/.test(n.innerText)), 'o histórico mostra o RDO como Aprovado, com o responsável técnico e o CREA');
+    await pm2.click('#view-historico button:visible:has-text("Reabrir")'); await pm2.waitForTimeout(2500); await senhaV17(); await pm2.waitForTimeout(1500);
+    check((await db.query(`SELECT dados->>'status' s, jsonb_array_length(dados->'historicoStatus') h FROM martins_producao_v1.registros WHERE modulo='rdos' AND dados->>'obra_id'=$1 AND dados->>'data'=$2`, [obraRdo, hojeRdo])).rows[0].s === 'rascunho', 'reabrir (com motivo) devolve o RDO a rascunho no servidor e o histórico guarda aprovação e reabertura');
+    // frequência: salvar uma pessoa por vez, com autoria visível
+    await pm2.evaluate(() => { window.navegarParaSecao('colaboradores'); window.setSubtabColab?.('ponto'); }); await pm2.waitForSelector('#tbody-auditoria-ponto tr[data-colab-id] .btn-salvar-linha-ponto');
+    const rowId = await pm2.$eval('#tbody-auditoria-ponto tr[data-colab-id]', r => r.dataset.colabId);
+    await pm2.selectOption('#tbody-auditoria-ponto tr[data-colab-id] .sel-destino-ponto', 'STATUS:folga');
+    await pm2.click('#tbody-auditoria-ponto tr[data-colab-id] .btn-salvar-linha-ponto'); await pm2.waitForTimeout(1500); await senhaV17(); await pm2.waitForTimeout(2000);
+    const fl = (await db.query(`SELECT dados FROM martins_producao_v1.registros WHERE modulo='frequencia' AND dados->>'funcionario_id'=$1 AND dados->>'data'=$2`, [rowId, hojeRdo])).rows;
+    check(fl.some(r => r.dados.situacao === 'folga'), 'o botão Salvar da linha grava só aquele funcionário (folga), sem precisar do "salvar frequência do dia"');
+    check(await pm2.$eval('#tbody-auditoria-ponto tr[data-colab-id] .freq-autor', n => /Alterado por Master Teste em \d{2}\/\d{2}\/\d{4}/.test(n.textContent)), 'a linha mostra quem alterou e quando ("Alterado por Master Teste em …")');
+    // EPI: um recibo com vários itens, alterar e ver no painel do RH
+    const epi1 = '00000000-0000-4000-8000-0000000000a1', epi2 = '00000000-0000-4000-8000-0000000000a2';
+    for (const [i, n, tm] of [[epi1, 'Capacete QA', 'U'], [epi2, 'Bota QA', '42']]) await db.query(`INSERT INTO martins_producao_v1.registros(empresa_id,modulo,id,revisao,dados,criado_por,atualizado_por) VALUES ($1,'epis',$2,1,$3::jsonb,$4,$4)`, [E, i, JSON.stringify({ nome: n, codigo: n.slice(0, 3).toUpperCase(), tamanho: tm, estoque_minimo: 1 }), '11111111-1111-4111-8111-111111111111']);
+    await pm2.evaluate(() => window.MartinsCadastrosServidor.abrir('epi_entregas')); await pm2.waitForSelector('#epi-func');
+    await pm2.selectOption('#epi-func', engId); await pm2.fill('#epi-motivo', 'Admissão');
+    await pm2.selectOption('.epi-item-sel', epi1); await pm2.click('#epi-mais'); await pm2.waitForSelector('[data-epi=itens] tr:nth-child(2)');
+    await pm2.selectOption('[data-epi=itens] tr:nth-child(2) .epi-item-sel', epi2); await pm2.fill('[data-epi=itens] tr:nth-child(2) .epi-item-qtd', '2');
+    await pm2.click('#epi-salvar'); await pm2.waitForTimeout(1200); await senhaV17(); await pm2.waitForTimeout(1500);
+    const rc = (await db.query(`SELECT revisao, dados FROM martins_producao_v1.registros WHERE modulo='epi_entregas'`)).rows;
+    check(rc.length === 1 && rc[0].dados.itens.length === 2 && rc[0].dados.numero === 1 && rc[0].dados.itens[1].qtd === 2, 'um recibo de EPI com 2 itens (capacete 1 + bota 2), número 1 definido pelo servidor');
+    await pm2.waitForSelector('[data-epi=editar]'); await pm2.click('[data-epi=editar]'); await pm2.fill('[data-epi=itens] tr:nth-child(2) .epi-item-qtd', '3');
+    await pm2.click('#epi-salvar'); await pm2.waitForTimeout(1200); await senhaV17(); await pm2.waitForTimeout(1500);
+    const rc2 = (await db.query(`SELECT revisao, dados FROM martins_producao_v1.registros WHERE modulo='epi_entregas'`)).rows;
+    check(rc2.length === 1 && Number(rc2[0].revisao) === 2 && rc2[0].dados.itens[1].qtd === 3 && rc2[0].dados.numero === 1, 'alterar o recibo pelo mesmo módulo atualiza o mesmo recibo (revisão 2, mesmo número), sem criar outro');
+    await pm2.evaluate(() => { try { window.MartinsCadastrosServidor.fechar(); } catch {} window.navegarParaSecao('colaboradores'); window.setSubtabColab('uniformes'); });
+    await pm2.waitForSelector('#epi-servidor [data-epi=resumo] .fin-card');
+    check(await pm2.$eval('#subview-uniformes-colab', n => { const v = n.innerText; return /Recibos no mês/i.test(v) && !/\b148\b|\b62\b|\b38\b/.test(v); }), 'o painel de Uniformes/EPIs do RH mostra os números do servidor, sem os 148/62/38/26 de exemplo');
+    // barra lateral: cada item abre a função certa (antes abria a tela antiga, guardada no navegador)
+    const abrirPelaLateral = async (re) => { await pm2.evaluate(() => { try { window.MartinsCadastrosServidor.fechar(); } catch {} window.abrirDrawerMenu?.(); const d = document.getElementById('drawer-menu-lateral'); if (d) { d.classList.remove('hidden'); d.style.display = 'block'; } }); await pm2.evaluate(src => { const r = new RegExp(src); const b = [...document.querySelectorAll('#drawer-lista-modulos button')].find(x => r.test((x.getAttribute('onclick') || '') + ' ' + (x.getAttribute('data-nav-servidor') || ''))); b.click(); }, re); await pm2.waitForTimeout(1200); };
+    await abrirPelaLateral("setSubtabSuprimentos\\('estoque'\\)"); check(await pm2.$eval('#cs-painel', n => !n.hidden && /Estoque/.test(n.innerText)), 'barra lateral → "Estoque & Depósitos" abre o Estoque do servidor');
+    await abrirPelaLateral("setSubtabSuprimentos\\('pedidos'\\)"); check(await pm2.$eval('#cs-painel', n => !n.hidden && /Compras|Pedido/.test(n.innerText)), 'barra lateral → "Pedidos de Materiais" abre as Compras do servidor');
+    await abrirPelaLateral("navegarPeloDrawer\\('usuarios'\\)"); check(await pm2.$eval('#cs-painel', n => !n.hidden && /Usuários|usuário/i.test(n.innerText)), 'barra lateral → "Controle de Usuários" abre Usuários e permissões do servidor');
+    await abrirPelaLateral('data-nav-servidor|^ *$|financeiro'); await pm2.waitForTimeout(500);
+    check(await pm2.evaluate(() => { const v = document.getElementById('view-financeiro'); return !!v && !v.classList.contains('hidden') && !!document.getElementById('financeiro-servidor'); }) || await pm2.evaluate(() => !!document.querySelector('[data-nav-servidor=financeiro]')), 'a barra lateral ganhou "Financeiro" (fluxo de caixa, DRE e conciliação) e "Requisições de Material"');
+    check(pm2.erros.length === 0, 'nenhuma exceção JavaScript nos fluxos do v17' + (pm2.erros.length ? ': ' + pm2.erros.slice(0, 2).join(' | ') : ''));
 
     console.log('RDO: filtro por obra e período, e PDF do período com TODOS os diários do intervalo');
     for (let i = 0; i < 38; i++) await db.query(`INSERT INTO martins_producao_v1.registros(empresa_id,modulo,id,revisao,dados,criado_por,atualizado_por) VALUES ($1,'rdos',$2,1,$3::jsonb,$4,$4)`, [E, '00000000-0000-4000-8000-00000000e' + String(100 + i).padStart(3, '0'), JSON.stringify({ obra_id: obraRdo, numero: 200 + i, data: '2026-09-0' + (1 + (i % 7)), status: 'rascunho', servicos: 'Serviço de teste ' + i, trabalhadores: [] }), M]);
